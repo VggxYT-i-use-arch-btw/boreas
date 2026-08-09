@@ -2,7 +2,7 @@
 
 // URL pública fixa do backend exposto pelo túnel Cloudflared.
 // Atualize este valor quando o Quick Tunnel mudar de endereço.
-const BACKEND_URL = "https://participated-changelog-specially-species.trycloudflare.com";
+const BACKEND_URL = "https://toll-proven-states-adapted.trycloudflare.com";
 
 // Guarda a fila de escrita pendente em IndexedDB para que a aba e o Service Worker possam reenviar quando a conexão voltar.
 const SYNC_QUEUE_DB = "boreas_sync_queue_db";
