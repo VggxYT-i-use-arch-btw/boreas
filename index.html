@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Boreas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading-screen">
+  <img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" class="loading-logo" alt="Boreas" draggable="false">
+  <div class="loading-bar-wrap"><div class="loading-bar" id="loading-bar"></div></div>
+</div>
+
+<!-- Onboard screen -->
+<div id="onboard-screen" class="hidden">
+  <div class="ob-logo-wrap">
+    <img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" class="ob-logo-img" alt="Boreas" draggable="false">
+  </div>
+  <p class="ob-tagline" id="ob-typing-text"><span class="ob-cursor blinking">█</span></p>
+
+  <button class="ob-open-btn" id="ob-open-form">Entrar / Criar conta</button>
+
+  <div id="ob-form-sheet">
+    <div class="ob-form-handle"></div>
+    <div class="ob-form-title">Bem-vindo ao Boreas</div>
+    <input class="ob-input" id="ob-name" type="text" placeholder="Como quer ser chamado?" autocomplete="name">
+    <input class="ob-input" id="ob-use" type="text" placeholder="Para que vai usar o Boreas? (opcional)" autocomplete="off">
+    <input class="ob-input" id="ob-email" type="email" placeholder="Seu e-mail" autocomplete="email">
+    <input class="ob-input" id="ob-pass" type="password" placeholder="Senha (mín. 8 caracteres, 2 números)" autocomplete="new-password">
+    <input class="ob-input" id="ob-pass2" type="password" placeholder="Confirme a senha" autocomplete="new-password">
+    <div class="ob-checkbox-row">
+      <div class="ob-checkbox" id="ob-checkbox">
+        <svg class="cb-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <span class="ob-checkbox-label">Concordo com os Termos de Uso e a Política de Privacidade</span>
+    </div>
+    <div class="ob-error" id="ob-error"></div>
+    <button class="ob-submit" id="ob-submit">Entrar / Criar conta</button>
+  </div>
+</div>
+
+<!-- Chat screen -->
+<div id="chat-screen" style="display:none">
+  <div class="top-bar">
+    <button id="hamburger-btn">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="model-pill" id="model-pill">
+      <span id="model-label"></span>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      <div class="model-dropdown">
+        <div class="model-option" data-tier="altra">
+          <svg class="model-option-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <div class="model-option-info">
+            <div class="model-option-name">Boreas Altra I</div>
+            <div class="model-option-desc">O modelo mais capaz. Inteligência de próximo nível.</div>
+          </div>
+        </div>
+        <div class="model-option" data-tier="ultra">
+          <svg class="model-option-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <div class="model-option-info">
+            <div class="model-option-name">Boreas 5.8 Ultra</div>
+            <div class="model-option-desc">Máxima inteligência e raciocínio</div>
+          </div>
+        </div>
+        <div class="model-option" data-tier="pro">
+          <svg class="model-option-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <div class="model-option-info">
+            <div class="model-option-name">Boreas 5.8 Pro</div>
+            <div class="model-option-desc">Equilíbrio entre velocidade e qualidade</div>
+          </div>
+        </div>
+        <div class="model-option" data-tier="normal">
+          <svg class="model-option-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <div class="model-option-info">
+            <div class="model-option-name">Boreas 5.8</div>
+            <div class="model-option-desc">Rápido e eficiente para o dia a dia</div>
+          </div>
+        </div>
+        <div class="model-option" data-tier="quick">
+          <svg class="model-option-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <div class="model-option-info">
+            <div class="model-option-name">Boreas 5.7 Quick</div>
+            <div class="model-option-desc">Ultra rápido para respostas simples</div>
+          </div>
+        </div>
+        <div class="more-models-section" id="more-models-section">
+          <div class="more-models-btn" id="more-models-btn">
+            <span class="more-models-btn-label">Mais modelos</span>
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="more-models-list" id="more-models-list">
+            <div class="model-option" data-tier="coding">
+              <svg class="model-option-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              <div class="model-option-info">
+                <div class="model-option-name">Boreas Nova 5.9</div>
+                <div class="model-option-desc">Focado em programação e desenvolvimento de programas</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="effort-section" id="effort-section">
+          <div class="effort-pill-btn" id="effort-pill-btn">
+            <span class="effort-pill-btn-label">Esforço</span>
+            <span class="effort-pill-btn-right">
+              <span class="effort-pill-btn-value" id="effort-pill-btn-value">Padrão</span>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </div>
+          <div class="effort-list" id="effort-list">
+            <div class="effort-list-inner">
+              <div class="effort-option" data-effort="default">
+                <svg class="effort-option-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <div class="effort-option-info">
+                  <div class="effort-option-name">Padrão</div>
+                  <div class="effort-option-desc">O nível padrão de raciocínio</div>
+                </div>
+              </div>
+              <div class="effort-option" data-effort="low">
+                <svg class="effort-option-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <div class="effort-option-info">
+                  <div class="effort-option-name">Baixo</div>
+                  <div class="effort-option-desc">Para tarefas simples e rápidas</div>
+                </div>
+              </div>
+              <div class="effort-option" data-effort="medium">
+                <svg class="effort-option-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <div class="effort-option-info">
+                  <div class="effort-option-name">Médio</div>
+                  <div class="effort-option-desc">Para tarefas que exigem um pouco mais de pensamento</div>
+                </div>
+              </div>
+              <div class="effort-option" data-effort="high">
+                <svg class="effort-option-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                <div class="effort-option-info">
+                  <div class="effort-option-name">Alto</div>
+                  <div class="effort-option-desc">Para trabalhos complexos e difíceis</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div id="memory-btns">
+      <button id="memory-info-btn" title="Sobre memórias">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </button>
+      <button id="memory-toggle-btn" title="Memória">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/><path d="M17.599 6.5a3 3 0 0 0 .399-1.375"/><path d="M6.003 5.125A3 3 0 0 0 6.401 6.5"/><path d="M3.477 10.896a4 4 0 0 1 .585-.396"/><path d="M19.938 10.5a4 4 0 0 1 .585.396"/><path d="M6 18a4 4 0 0 1-1.967-.516"/><path d="M19.967 17.484A4 4 0 0 1 18 18"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div id="messages">
+    <div class="empty-state" id="empty">
+      <img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" class="empty-logo-img" alt="Boreas" draggable="false">
+      <span class="empty-text">Como posso te ajudar esta tarde?</span>
+    </div>
+  </div>
+
+  <button id="scroll-bottom-btn" title="Ir para a resposta mais recente">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+  </button>
+
+  <div id="image-preview-wrap"></div>
+
+  <div id="lightbox-overlay">
+    <div id="lightbox-close">✕</div>
+    <img id="lightbox-img" src="" alt="">
+  </div>
+
+  <div id="warn-overlay">
+    <div class="warn-card">
+      <div class="warn-exclamation">!</div>
+      <div class="warn-title" id="warn-title">Você usou 83% dos seus tokens, a conversa pode acabar em breve</div>
+      <button class="warn-btn" id="warn-btn">Entendido</button>
+    </div>
+  </div>
+
+  <div id="lock-bar">
+    <div class="lock-bar-msg" id="lock-msg">Você esgotou suas mensagens até —</div>
+    <button class="lock-upgrade-btn" id="lock-upgrade-btn">Atualizar meu plano</button>
+  </div>
+
+  <div id="novision-warn">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+    <span id="novision-warn-text"></span>
+  </div>
+
+  <div id="mention-popup">
+    <div id="mention-popup-title">Plugins</div>
+    <div id="mention-popup-inner"></div>
+  </div>
+
+  <div id="plugin-pill">
+    <svg id="plugin-pill-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <span id="plugin-pill-label">Busca na Web</span>
+    <span id="plugin-pill-remove" title="Remover">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </span>
+  </div>
+
+  <div class="input-row">
+    <button id="attach-btn" title="Anexar">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+      </svg>
+    </button>
+    <input type="file" id="camera-input" accept="image/*" capture="environment">
+    <input type="file" id="file-input" accept="image/*" multiple>
+    <input type="file" id="any-file-input">
+    <textarea id="msg-input" rows="1" placeholder="Explore infinitas possibilidades..."></textarea>
+    <button id="send-btn" disabled>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--bg)"><path d="M3 11.5L21 3l-6.5 18-3.5-7.5L3 11.5z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="sidebar-overlay"></div>
+
+<div id="sidebar">
+  <div class="sidebar-header">
+    <div class="sidebar-logo">
+      <span class="sidebar-logo-name">Boreas</span>
+    </div>
+    <button class="sidebar-close-btn" id="sidebar-close">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="sidebar-actions">
+    <button class="sidebar-new-chat" id="sidebar-new-chat">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nova conversa
+    </button>
+    <button class="sidebar-projeto" id="sidebar-projeto">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+      Projetos
+    </button>
+  </div>
+  <div class="sidebar-section-label">Recentes</div>
+  <div id="sidebar-chat-list"></div>
+  <div class="sidebar-footer">
+    <div class="sidebar-user">
+      <div class="sidebar-avatar" id="sidebar-avatar">?</div>
+      <span class="sidebar-user-name" id="sidebar-user-name">—</span>
+    </div>
+    <button class="sidebar-settings-btn" id="sidebar-settings-btn" title="Configurações">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+</div>
+
+<div id="settings-overlay">
+  <div class="settings-views" id="settings-views">
+
+    <!-- Main menu -->
+    <div class="settings-view active" id="view-main" data-view="main">
+      <div class="settings-header">
+        <span class="settings-title">Configurações</span>
+        <button class="settings-close" id="settings-close">✕</button>
+      </div>
+      <div class="settings-body">
+        <div class="settings-profile-card">
+          <div class="settings-avatar-lg" id="settings-avatar-lg">?</div>
+          <div class="settings-user-info">
+            <div class="settings-user-name" id="settings-user-name-modal">—</div>
+            <div class="settings-user-email" id="settings-user-email">—</div>
+          </div>
+        </div>
+
+        <div class="settings-menu-group">
+          <button class="settings-menu-item" data-target="profile">
+            <span class="settings-menu-icon" data-icon="profile"></span>
+            <span class="settings-menu-item-text">Perfil</span>
+            <span class="settings-menu-chevron" data-icon="chevron"></span>
+          </button>
+          <button class="settings-menu-item" data-target="usage">
+            <span class="settings-menu-icon" data-icon="usage"></span>
+            <span class="settings-menu-item-text">Uso</span>
+            <span class="settings-menu-chevron" data-icon="chevron"></span>
+          </button>
+        </div>
+
+        <div class="settings-menu-group">
+          <button class="settings-menu-item" data-target="capabilities">
+            <span class="settings-menu-icon" data-icon="capabilities"></span>
+            <span class="settings-menu-item-text">Capacidades</span>
+            <span class="settings-menu-chevron" data-icon="chevron"></span>
+          </button>
+          <button class="settings-menu-item" data-target="connectors">
+            <span class="settings-menu-icon" data-icon="connectors"></span>
+            <span class="settings-menu-item-text">Conectores</span>
+            <span class="settings-menu-chevron" data-icon="chevron"></span>
+          </button>
+        </div>
+
+        <div class="settings-menu-group">
+          <button class="settings-menu-item" data-action="colormode">
+            <span class="settings-menu-icon" data-icon="colormode"></span>
+            <span class="settings-menu-item-text">Modo de cor</span>
+            <span class="settings-menu-chevron" data-icon="chevron"></span>
+          </button>
+          <button class="settings-menu-item" data-target="fontstyle">
+            <span class="settings-menu-icon" data-icon="font"></span>
+            <span class="settings-menu-item-text">Estilo de fonte</span>
+            <span class="settings-menu-chevron" data-icon="chevron"></span>
+          </button>
+        </div>
+
+        <div class="settings-menu-group">
+          <button class="settings-menu-item" data-target="privacy">
+            <span class="settings-menu-icon" data-icon="privacy"></span>
+            <span class="settings-menu-item-text">Privacidade</span>
+            <span class="settings-menu-chevron" data-icon="chevron"></span>
+          </button>
+        </div>
+
+        <button class="settings-logout-btn" id="settings-logout-btn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          Sair da minha conta
+        </button>
+      </div>
+    </div>
+
+    <!-- Generic sub-view (content injected per category by JS) -->
+    <div class="settings-view" id="view-sub" data-view="sub">
+      <div class="settings-header">
+        <button class="settings-back" id="settings-back">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="settings-title" id="sub-title">—</span>
+      </div>
+      <div class="settings-body" id="sub-body"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Modo de cor: small overlay modal, blurs everything else -->
+<div id="colormode-modal-backdrop">
+  <div class="colormode-modal">
+    <div class="colormode-modal-title">Modo de cor</div>
+    <div id="colormode-options">
+      <div class="colormode-option" data-theme="system">
+        <span>Sistema</span><span class="colormode-option-check" data-icon="check"></span>
+      </div>
+      <div class="colormode-option" data-theme="light">
+        <span>Claro</span><span class="colormode-option-check" data-icon="check"></span>
+      </div>
+      <div class="colormode-option selected" data-theme="dark">
+        <span>Escuro</span><span class="colormode-option-check" data-icon="check"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="coming-soon-overlay">
+  <div class="coming-soon-card">
+    <div class="coming-soon-emoji">🚧</div>
+    <div class="coming-soon-title">Em breve!</div>
+    <div class="coming-soon-desc">Projetos ainda estão sendo desenvolvidos. Aguarde novidades!</div>
+    <button class="coming-soon-btn" id="coming-soon-close">Entendido</button>
+  </div>
+</div>
+
+<div id="rename-overlay">
+  <div class="rename-card">
+    <div class="rename-modal-title">Renomear conversa</div>
+    <input id="rename-input" type="text" maxlength="80" placeholder="Nome da conversa...">
+    <div class="rename-btns">
+      <button id="rename-cancel">Cancelar</button>
+      <button id="rename-confirm">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div id="resume-overlay">
+  <div class="resume-card">
+    <div id="resume-processing">
+      <div class="typing-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+      <div class="resume-status-text">Resumindo sua conversa…</div>
+    </div>
+    <div id="resume-result" style="display:none">
+      <div class="resume-result-title" id="resume-result-title"></div>
+      <div class="resume-result-desc" id="resume-result-desc"></div>
+      <button class="resume-result-btn" id="resume-close-btn">Entendido</button>
+    </div>
+  </div>
+</div>
+
+<div id="sheet-backdrop"></div>
+<div id="thinking-sheet">
+  <div class="sheet-handle" id="sheet-handle"></div>
+  <div class="sheet-header">
+    <span class="sheet-title">Processo de pensamento</span>
+    <button class="sheet-close" id="sheet-close">&#x2715;</button>
+  </div>
+  <div class="sheet-body" id="sheet-body"></div>
+  <div class="sheet-expand-hint" id="sheet-expand-hint">Toque para expandir</div>
+</div>
+
+<div id="attach-sheet-backdrop"></div>
+<div id="attach-sheet">
+  <div class="asheet-handle"></div>
+  <div class="asheet-header">
+    <button class="asheet-close" id="asheet-close" aria-label="Fechar">&#x2715;</button>
+    <span class="asheet-title">Adicionar ao chat</span>
+  </div>
+  <div class="asheet-cards">
+    <div class="asheet-card" id="asheet-camera">
+      <div class="asheet-card-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3.5"/></svg>
+      </div>
+      <div class="asheet-card-label">Câmera</div>
+    </div>
+    <div class="asheet-card" id="asheet-photos">
+      <div class="asheet-card-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+      </div>
+      <div class="asheet-card-label">Fotos</div>
+    </div>
+    <div class="asheet-card" id="asheet-files">
+      <div class="asheet-card-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 20h16"/></svg>
+      </div>
+      <div class="asheet-card-label">Arquivos</div>
+    </div>
+  </div>
+  <div class="asheet-row" id="asheet-websearch-row">
+    <div class="asheet-row-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+    </div>
+    <div class="asheet-row-label">Busca na web</div>
+    <div class="toggle-switch" id="asheet-websearch-toggle"><div class="toggle-knob"></div></div>
+  </div>
+  <div class="asheet-row" id="asheet-plugins-row">
+    <div class="asheet-row-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v4"/><path d="M10 3v4"/><path d="M2 7h12v4a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V7Z"/><path d="M8 15v3a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2h-3"/></svg>
+    </div>
+    <div class="asheet-row-label">Plugins</div>
+    <span class="asheet-row-chevron"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+  </div>
+  <div id="asheet-plugins-list"></div>
+</div>
+
+<div class="bash-confirm-overlay" id="bash-confirm-overlay">
+  <div class="bash-confirm-card">
+    <div class="bash-confirm-title">⚠️ Autorização necessária</div>
+    <div class="bash-confirm-desc">O modelo quer executar um comando que requer sua permissão:</div>
+    <pre class="bash-confirm-cmd" id="bash-confirm-cmd"></pre>
+    <div class="bash-confirm-btns">
+      <button class="bash-confirm-allow" id="bash-confirm-allow">Autorizar</button>
+      <button class="bash-confirm-deny" id="bash-confirm-deny">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+  <!-- Front-end modularizado: a ordem preserva as dependências globais existentes. -->
+  <script src="./onboard.js"></script>
+  <script src="./api-sync.js"></script>
+  <script src="./chat-data.js"></script>
+  <script src="./attachments-images.js"></script>
+  <script src="./sidebar-settings.js"></script>
+  <script src="./composer-input.js"></script>
+  <script src="./streaming-render.js"></script>
+</body>
+</html>
