@@ -4,7 +4,7 @@
 
 const SYNC_QUEUE_DB = "boreas_sync_queue_db";
 // URL pública fixa do backend para itens antigos que ainda armazenam apenas o path.
-const BOREAS_BACKEND_URL = "https://participated-changelog-specially-species.trycloudflare.com";
+const BOREAS_BACKEND_URL = "https://toll-proven-states-adapted.trycloudflare.com";
 
 function openQueueDb() {
   return new Promise((resolve, reject) => {
