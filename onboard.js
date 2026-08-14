@@ -1,261 +1,254 @@
 // Boreas — loading screen, onboarding e autenticação.
 
-(function() {
+(function () {
   var PHRASES = [
     "Criado para resolver problemas",
     "Feito para você",
     "Sua criatividade, sem limites",
     "Construa o que você quiser",
-    "Boreas, onde o controle é totalmente seu",
-    "Continue pensando, criando, e agindo",
+    "Continue pensando, criando e agindo",
     "Transforme ideias em realidade",
     "Crie sem barreiras",
     "Onde suas ideias ganham vida",
     "Imagine. Crie. Evolua.",
     "Do conceito à criação",
-    "Construa o impossível",
-    "Faça acontecer",
-    "Onde a liberdade não tem limites",
     "Pense mais, faça mais",
     "Seu tempo, seu ritmo",
-    "Simples assim",
-    "Onde o impossível vira rotina",
     "Onde cada ideia tem espaço",
-    "Onde o futuro começa agora",
     "Sua imaginação, amplificada",
     "Seu próximo passo começa aqui",
-    "Criar é humano. Evoluir, também",
-    "Menos obstáculos, mais criação"
   ];
-  var lastIdx = -1;
-  var el = document.getElementById('ob-typing-text');
-  if (!el) return;
 
-  var cursorSpan = el.querySelector('.ob-cursor');
-  var textNode = document.createTextNode('');
-  el.insertBefore(textNode, cursorSpan);
+  var phraseEl = document.getElementById("ob-typing-text");
+  if (!phraseEl) return;
+  var cursor = phraseEl.querySelector(".ob-cursor");
+  var textNode = document.createTextNode("");
+  phraseEl.insertBefore(textNode, cursor);
+  var lastIndex = -1;
 
-  var TYPE_MS  = (60 * 1000) / (175 * 5);
-  var ERASE_MS = (60 * 1000) / (375 * 5);
-  var SLEEP_MS = 2800;
-
-  function render(text) { textNode.nodeValue = text; }
-  function setCursorBlink(on) {
-    cursorSpan.classList.toggle('blinking', on);
-  }
-
+  function setCursorBlink(enabled) { cursor.classList.toggle("blinking", enabled); }
   function nextPhrase() {
-    var idx;
-    do { idx = Math.floor(Math.random() * PHRASES.length); } while (idx === lastIdx);
-    lastIdx = idx;
-    return PHRASES[idx] + '. ';
+    var index;
+    do { index = Math.floor(Math.random() * PHRASES.length); } while (index === lastIndex);
+    lastIndex = index;
+    return PHRASES[index] + ". ";
   }
-
   function typePhrase() {
-    setCursorBlink(false);
     var phrase = nextPhrase();
-    var i = 0;
-    render('');
-    var write = setInterval(function() {
-      i++;
-      render(phrase.slice(0, i));
-      if (i >= phrase.length) {
-        clearInterval(write);
+    var index = 0;
+    setCursorBlink(false);
+    textNode.nodeValue = "";
+    var timer = setInterval(function () {
+      textNode.nodeValue = phrase.slice(0, ++index);
+      if (index >= phrase.length) {
+        clearInterval(timer);
         setCursorBlink(true);
-        setTimeout(function() {
-          setCursorBlink(false);
-          erasePhrase(phrase);
-        }, SLEEP_MS);
+        setTimeout(function () { erasePhrase(phrase); }, 2800);
       }
-    }, TYPE_MS);
+    }, 42);
   }
-
   function erasePhrase(phrase) {
-    var j = phrase.length;
-    var erase = setInterval(function() {
-      j--;
-      render(j > 0 ? phrase.slice(0, j) : '');
-      if (j <= 0) {
-        clearInterval(erase);
+    var index = phrase.length;
+    setCursorBlink(false);
+    var timer = setInterval(function () {
+      textNode.nodeValue = phrase.slice(0, --index);
+      if (index <= 0) {
+        clearInterval(timer);
         setTimeout(typePhrase, 120);
       }
-    }, ERASE_MS);
+    }, 18);
   }
-
   typePhrase();
-
-  var openBtn  = document.getElementById('ob-open-form');
-  var formSheet = document.getElementById('ob-form-sheet');
-  if (openBtn && formSheet) {
-    openBtn.addEventListener('click', function() {
-      formSheet.classList.add('open');
-      setTimeout(function() {
-        var first = document.getElementById('ob-name');
-        if (first) first.focus();
-      }, 350);
-    });
-    formSheet.addEventListener('click', function(e) { e.stopPropagation(); });
-    document.getElementById('onboard-screen').addEventListener('click', function() {
-      formSheet.classList.remove('open');
-    });
-  }
 })();
-(function() {
+
+(function () {
   function initAuth() {
-  var ASSET_URL = 'https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/loginback.png';
-  var loadingEl = document.getElementById('loading-screen');
-  var onboardEl = document.getElementById('onboard-screen');
-  var chatEl    = document.getElementById('chat-screen');
-  var barEl     = document.getElementById('loading-bar');
+    var loadingEl = document.getElementById("loading-screen");
+    var onboardEl = document.getElementById("onboard-screen");
+    var chatEl = document.getElementById("chat-screen");
+    var barEl = document.getElementById("loading-bar");
+    var formSheet = document.getElementById("ob-form-sheet");
+    var formTitle = document.getElementById("ob-form-title");
+    var formSubtitle = document.getElementById("ob-form-subtitle");
+    var formStep = document.getElementById("ob-form-step");
+    var submitBtn = document.getElementById("ob-submit");
+    var switchBtn = document.getElementById("ob-switch-mode");
+    var errorEl = document.getElementById("ob-error");
+    var currentMode = "login";
 
-  function showChat() {
-    loadingEl.style.display = 'none';
-    onboardEl.style.display = 'none';
-    chatEl.style.display    = 'flex';
-  }
-  function showOnboard() {
-    loadingEl.style.display = 'none';
-    onboardEl.style.display = 'flex';
-    chatEl.style.display    = 'none';
-  }
-
-  var wasOnboarded = localStorage.getItem('boreas_onboarded') === 'true';
-  var hasName      = !!localStorage.getItem('boreas_name');
-  if (wasOnboarded && !hasName) { localStorage.removeItem('boreas_onboarded'); wasOnboarded = false; }
-
-  if (wasOnboarded) { showChat(); return; }
-
-  var IMAGES = [
-    'https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/loginback.png',
-    'https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png',
-    'https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/cooleffect.png',
-  ];
-
-  var progress = 0;
-  var ticker = setInterval(function() {
-    if (progress < 70) { progress = Math.min(progress + Math.random() * 8, 70); if (barEl) barEl.style.width = progress + '%'; }
-  }, 150);
-
-  var settled = false;
-  function proceed() {
-    if (settled) return; settled = true; clearInterval(ticker);
-    if (barEl) barEl.style.width = '100%';
-    setTimeout(showOnboard, 280);
-  }
-
-  var total = IMAGES.length, done = 0;
-  IMAGES.forEach(function(src) {
-    var i = new Image();
-    i.onload = i.onerror = function() {
-      done++; progress = Math.min(70 + (done / total) * 30, 99);
-      if (barEl) barEl.style.width = progress + '%';
-      if (done >= total) proceed();
-    };
-    i.src = src;
-  });
-  setTimeout(proceed, 8000);
-
-  var cb = document.getElementById('ob-checkbox');
-  if (cb) cb.addEventListener('click', function() { cb.classList.toggle('checked'); });
-
-  var submitBtn = document.getElementById('ob-submit');
-  if (submitBtn) submitBtn.addEventListener('click', function() {
-    var name  = document.getElementById('ob-name').value.trim();
-    var use   = document.getElementById('ob-use').value.trim();
-    var email = document.getElementById('ob-email').value.trim();
-    var pass  = document.getElementById('ob-pass').value;
-    var pass2 = document.getElementById('ob-pass2').value;
-    var errEl = document.getElementById('ob-error');
-
-    errEl.textContent = '';
-    if (!name)  return (errEl.textContent = 'Digite como quer ser chamado.');
-    if (!email) return (errEl.textContent = 'Digite seu e-mail.');
-    var emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-    if (!emailRe.test(email)) return (errEl.textContent = 'E-mail inválido. Ex: nome@email.com');
-    if (!pass)             return (errEl.textContent = 'Digite uma senha.');
-    if (pass.length < 8)   return (errEl.textContent = 'Senha precisa ter ao menos 8 caracteres.');
-    var numCount = (pass.match(/\d/g) || []).length;
-    if (numCount < 2)      return (errEl.textContent = 'Senha precisa ter ao menos 2 números.');
-    if (pass !== pass2)    return (errEl.textContent = 'As senhas não coincidem.');
-
-    submitBtn.disabled = true; submitBtn.textContent = 'Entrando...';
-
-    var bUrl = (typeof BACKEND_URL !== 'undefined') ? BACKEND_URL : '';
-    function goChat() {
-      if (typeof setGreeting === 'function') setGreeting();
-      var chatEl2 = document.getElementById('chat-screen');
-      if (chatEl2) chatEl2.style.display = 'flex';
-      var lEl = document.getElementById('loading-screen');
-      var oEl = document.getElementById('onboard-screen');
-      if (lEl) lEl.style.display = 'none';
-      if (oEl) oEl.style.display = 'none';
+    function showChat() {
+      if (loadingEl) loadingEl.style.display = "none";
+      if (onboardEl) onboardEl.style.display = "none";
+      if (chatEl) chatEl.style.display = "flex";
     }
-    function persistAndGo(sessionId, resolvedName) {
-      localStorage.setItem('boreas_onboarded', 'true');
-      localStorage.setItem('boreas_name', resolvedName || name);
-      localStorage.setItem('boreas_use', use);
-      localStorage.setItem('boreas_email', email);
-      // Guarda o session id real devolvido pelo servidor - é ele que vai
-      // no header x-session-id de toda chamada autenticada do app.
-      localStorage.setItem('boreas_session_id', sessionId);
+    function showOnboard() {
+      if (loadingEl) loadingEl.style.display = "none";
+      if (onboardEl) onboardEl.style.display = "flex";
+      if (chatEl) chatEl.style.display = "none";
+    }
+    function setError(message) { if (errorEl) errorEl.textContent = message || ""; }
+    function setMode(mode) {
+      currentMode = mode === "register" ? "register" : "login";
+      var isRegister = currentMode === "register";
+      document.querySelectorAll(".ob-register-fields").forEach(function (el) {
+        el.classList.toggle("is-hidden", !isRegister);
+      });
+      formTitle.textContent = isRegister ? "Crie sua conta" : "Entrar na sua conta";
+      formSubtitle.textContent = isRegister
+        ? "Personalize sua experiência no Boreas desde o início."
+        : "Continue de onde você parou.";
+      formStep.textContent = isRegister ? "02" : "01";
+      submitBtn.textContent = isRegister ? "Criar conta" : "Fazer login";
+      switchBtn.textContent = isRegister ? "Já tenho uma conta" : "Ainda não tenho uma conta";
+      document.getElementById("ob-pass").setAttribute("autocomplete", isRegister ? "new-password" : "current-password");
+      setError("");
+    }
+    function openForm(mode) {
+      setMode(mode);
+      formSheet.classList.add("open");
+      setTimeout(function () {
+        var first = document.getElementById(currentMode === "register" ? "ob-name" : "ob-email");
+        if (first) first.focus();
+      }, 250);
+    }
+    function closeForm() { formSheet.classList.remove("open"); }
 
-      localStorage.removeItem('boreas_active_chat_v2');
+    var wasOnboarded = localStorage.getItem("boreas_onboarded") === "true";
+    var hasName = !!localStorage.getItem("boreas_name");
+    if (wasOnboarded && !hasName) {
+      localStorage.removeItem("boreas_onboarded");
+      wasOnboarded = false;
+    }
+    if (wasOnboarded) { showChat(); return; }
 
-      if (typeof _chatsMeta !== 'undefined') {
-        for (var k in _chatsMeta) delete _chatsMeta[k];
+    setMode("login");
+    document.getElementById("ob-login-btn").addEventListener("click", function () { openForm("login"); });
+    document.getElementById("ob-register-btn").addEventListener("click", function () { openForm("register"); });
+    document.getElementById("ob-form-back").addEventListener("click", closeForm);
+    switchBtn.addEventListener("click", function () { setMode(currentMode === "login" ? "register" : "login"); });
+    document.getElementById("ob-checkbox").addEventListener("click", function () {
+      this.classList.toggle("checked");
+      this.setAttribute("aria-checked", this.classList.contains("checked") ? "true" : "false");
+    });
+    onboardEl.addEventListener("click", function (event) {
+      if (event.target === onboardEl) closeForm();
+    });
+    formSheet.addEventListener("click", function (event) { event.stopPropagation(); });
+
+    function persistAndGo(sessionId, resolvedName, use) {
+      var email = document.getElementById("ob-email").value.trim();
+      var savedName = resolvedName || localStorage.getItem("boreas_name") || email.split("@")[0];
+      localStorage.setItem("boreas_onboarded", "true");
+      localStorage.setItem("boreas_name", savedName);
+      localStorage.setItem("boreas_use", use || localStorage.getItem("boreas_use") || "");
+      localStorage.setItem("boreas_email", email);
+      localStorage.setItem("boreas_session_id", sessionId);
+      localStorage.removeItem("boreas_active_chat_v2");
+      if (typeof _chatsMeta !== "undefined") {
+        for (var key in _chatsMeta) delete _chatsMeta[key];
       }
-      goChat();
+      if (typeof setGreeting === "function") setGreeting();
+      showChat();
     }
-    function tryLogin() {
-      submitBtn.textContent = 'Entrando na conta...';
-      fetch(bUrl + '/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password: pass })
-      })
-      .then(async lr => {
-        const ldata = await lr.json();
-        if (!lr.ok || !ldata.sessionId) {
-          errEl.textContent = 'Conta já existe — ' + (ldata.error ?? 'senha incorreta.');
-          submitBtn.disabled = false; submitBtn.textContent = 'Entrar / Criar conta';
-          return;
-        }
-        persistAndGo(ldata.sessionId, ldata.name);
-      })
-      .catch(() => {
-        errEl.textContent = 'Sem conexão com o servidor.';
-        submitBtn.disabled = false; submitBtn.textContent = 'Entrar / Criar conta';
-      });
-    }
-    if (bUrl) {
-      fetch(bUrl + '/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, use, email, password: pass })
-      })
-      .then(async r => {
-        const data = await r.json();
 
-        if (r.status === 409) { tryLogin(); return; }
-        if (!r.ok || !data.sessionId) {
-          errEl.textContent = data.error ?? 'Erro ao criar conta.';
-          submitBtn.disabled = false; submitBtn.textContent = 'Entrar / Criar conta';
+    function submitAuth() {
+      var name = document.getElementById("ob-name").value.trim();
+      var use = document.getElementById("ob-use").value.trim();
+      var email = document.getElementById("ob-email").value.trim();
+      var password = document.getElementById("ob-pass").value;
+      var password2 = document.getElementById("ob-pass2").value;
+      var emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+      setError("");
+
+      if (!email) return setError("Digite seu e-mail.");
+      if (!emailRe.test(email)) return setError("Digite um e-mail válido.");
+      if (!password) return setError("Digite sua senha.");
+      if (currentMode === "register") {
+        if (!name) return setError("Digite como quer ser chamado.");
+        if (password.length < 8) return setError("A senha precisa ter pelo menos 8 caracteres.");
+        if ((password.match(/\d/g) || []).length < 2) return setError("A senha precisa ter pelo menos 2 números.");
+        if (password !== password2) return setError("As senhas não coincidem.");
+        if (!document.getElementById("ob-checkbox").classList.contains("checked")) return setError("Aceite os termos para criar sua conta.");
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = currentMode === "register" ? "Criando conta..." : "Entrando...";
+      var backend = globalThis.BOREAS_BACKEND_URL || ((typeof BACKEND_URL !== "undefined") ? BACKEND_URL : "");
+      if (!backend) {
+        setError("Servidor indisponível no momento.");
+        submitBtn.disabled = false;
+        setMode(currentMode);
+        return;
+      }
+
+      var endpoint = currentMode === "register" ? "/register" : "/login";
+      var payload = currentMode === "register"
+        ? { name: name, use: use, email: email, password: password }
+        : { email: email, password: password };
+      fetch(backend + endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }).then(async function (response) {
+        var data = await response.json().catch(function () { return {}; });
+        if (!response.ok || !data.sessionId) {
+          if (response.status === 409) {
+            setMode("login");
+            setError("Essa conta já existe. Entre com sua senha.");
+          } else {
+            setError(data.error || (currentMode === "register" ? "Não foi possível criar sua conta." : "E-mail ou senha incorretos."));
+          }
+          submitBtn.disabled = false;
           return;
         }
-        persistAndGo(data.sessionId, data.name);
-      })
-      .catch(() => {
-        errEl.textContent = 'Sem conexão com o servidor.';
-        submitBtn.disabled = false; submitBtn.textContent = 'Entrar / Criar conta';
+        persistAndGo(data.sessionId, data.name, data.use || use);
+      }).catch(function () {
+        setError("Sem conexão com o servidor. Tente novamente.");
+        submitBtn.disabled = false;
+        submitBtn.textContent = currentMode === "register" ? "Criar conta" : "Fazer login";
       });
-    } else {
-      goChat();
     }
-  });
+
+    submitBtn.addEventListener("click", submitAuth);
+    ["ob-email", "ob-pass", "ob-pass2", "ob-name"].forEach(function (id) {
+      document.getElementById(id).addEventListener("keydown", function (event) {
+        if (event.key === "Enter") submitAuth();
+      });
+    });
+
+    var images = [
+      "https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/loginback.png",
+      "https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png",
+      "https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/cooleffect.png",
+    ];
+    var progress = 0;
+    var ticker = setInterval(function () {
+      if (progress < 72) {
+        progress = Math.min(progress + Math.random() * 8, 72);
+        if (barEl) barEl.style.width = progress + "%";
+      }
+    }, 150);
+    var loaded = 0;
+    var settled = false;
+    function proceed() {
+      if (settled) return;
+      settled = true;
+      clearInterval(ticker);
+      if (barEl) barEl.style.width = "100%";
+      setTimeout(showOnboard, 260);
+    }
+    images.forEach(function (src) {
+      var image = new Image();
+      image.onload = image.onerror = function () {
+        loaded++;
+        if (barEl) barEl.style.width = Math.min(72 + loaded / images.length * 28, 99) + "%";
+        if (loaded >= images.length) proceed();
+      };
+      image.src = src;
+    });
+    setTimeout(proceed, 8000);
   }
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initAuth, { once: true });
-  } else {
-    initAuth();
-  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initAuth, { once: true });
+  else initAuth();
 })();

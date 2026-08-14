@@ -1,8 +1,7 @@
 // Boreas — camada de rede, cache e fila de sincronização.
 
-// URL pública fixa do backend exposto pelo túnel Cloudflared.
-// Atualize este valor quando o Quick Tunnel mudar de endereço.
-const BACKEND_URL = "https://notebooks-blvd-advancement-caps.trycloudflare.com";
+// URL pública fixa do backend, definida em backend-config.js.
+const BACKEND_URL = globalThis.BOREAS_BACKEND_URL;
 
 // Guarda a fila de escrita pendente em IndexedDB para que a aba e o Service Worker possam reenviar quando a conexão voltar.
 const SYNC_QUEUE_DB = "boreas_sync_queue_db";

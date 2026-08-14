@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
@@ -16,6 +17,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <link rel="stylesheet" href="./styles.css">
+<link rel="stylesheet" href="./ui-refresh.css">
 </head>
 <body>
 
@@ -32,24 +34,36 @@
   </div>
   <p class="ob-tagline" id="ob-typing-text"><span class="ob-cursor blinking">█</span></p>
 
-  <button class="ob-open-btn" id="ob-open-form">Entrar / Criar conta</button>
+  <div class="ob-actions">
+    <button class="ob-open-btn ob-login-btn" id="ob-login-btn" type="button">Fazer login</button>
+    <button class="ob-open-btn ob-register-btn" id="ob-register-btn" type="button">Criar conta</button>
+  </div>
 
   <div id="ob-form-sheet">
     <div class="ob-form-handle"></div>
-    <div class="ob-form-title">Bem-vindo ao Boreas</div>
-    <input class="ob-input" id="ob-name" type="text" placeholder="Como quer ser chamado?" autocomplete="name">
-    <input class="ob-input" id="ob-use" type="text" placeholder="Para que vai usar o Boreas? (opcional)" autocomplete="off">
+    <div class="ob-form-topline">
+      <button class="ob-form-back" id="ob-form-back" type="button" aria-label="Voltar">←</button>
+      <span class="ob-form-kicker">Boreas</span>
+      <span class="ob-form-step" id="ob-form-step">01</span>
+    </div>
+    <div class="ob-form-title" id="ob-form-title">Entrar na sua conta</div>
+    <div class="ob-form-subtitle" id="ob-form-subtitle">Continue de onde parou.</div>
+    <div class="ob-register-fields" id="ob-register-fields">
+      <input class="ob-input" id="ob-name" type="text" placeholder="Como quer ser chamado?" autocomplete="name">
+      <input class="ob-input" id="ob-use" type="text" placeholder="Para que vai usar o Boreas? (opcional)" autocomplete="off">
+    </div>
     <input class="ob-input" id="ob-email" type="email" placeholder="Seu e-mail" autocomplete="email">
-    <input class="ob-input" id="ob-pass" type="password" placeholder="Senha (mín. 8 caracteres, 2 números)" autocomplete="new-password">
-    <input class="ob-input" id="ob-pass2" type="password" placeholder="Confirme a senha" autocomplete="new-password">
-    <div class="ob-checkbox-row">
+    <input class="ob-input" id="ob-pass" type="password" placeholder="Sua senha" autocomplete="current-password">
+    <input class="ob-input ob-register-fields" id="ob-pass2" type="password" placeholder="Confirme sua senha" autocomplete="new-password">
+    <div class="ob-checkbox-row ob-register-fields" id="ob-terms-row">
       <div class="ob-checkbox" id="ob-checkbox">
         <svg class="cb-check" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#000" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
       <span class="ob-checkbox-label">Concordo com os Termos de Uso e a Política de Privacidade</span>
     </div>
     <div class="ob-error" id="ob-error"></div>
-    <button class="ob-submit" id="ob-submit">Entrar / Criar conta</button>
+    <button class="ob-submit" id="ob-submit" type="button">Fazer login</button>
+    <button class="ob-switch-mode" id="ob-switch-mode" type="button">Ainda não tenho uma conta</button>
   </div>
 </div>
 
@@ -176,7 +190,9 @@
   <div id="messages">
     <div class="empty-state" id="empty">
       <img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" class="empty-logo-img" alt="Boreas" draggable="false">
+      <span class="empty-eyebrow">Boreas AI</span>
       <span class="empty-text">Como posso te ajudar esta tarde?</span>
+      <span class="empty-subtitle">Explore ideias, resolva problemas e construa algo novo.</span>
     </div>
   </div>
 
@@ -222,6 +238,12 @@
     </span>
   </div>
 
+  <div id="starter-chips" aria-label="Sugestões para começar">
+    <button type="button" data-starter="Explique uma ideia de forma simples">Explique uma ideia</button>
+    <button type="button" data-starter="Ajude-me a organizar meu dia">Organize meu dia</button>
+    <button type="button" data-starter="Quero criar algo novo">Crie comigo</button>
+  </div>
+
   <div class="input-row">
     <button id="attach-btn" title="Anexar">
       <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -244,6 +266,7 @@
   <div class="sidebar-header">
     <div class="sidebar-logo">
       <span class="sidebar-logo-name">Boreas</span>
+      <span class="sidebar-plan-badge">Pro</span>
     </div>
     <button class="sidebar-close-btn" id="sidebar-close">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -260,6 +283,10 @@
     </button>
   </div>
   <div class="sidebar-section-label">Recentes</div>
+  <label class="sidebar-search" for="sidebar-search-input">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+    <input id="sidebar-search-input" type="search" placeholder="Pesquisar conversas" autocomplete="off">
+  </label>
   <div id="sidebar-chat-list"></div>
   <div class="sidebar-footer">
     <div class="sidebar-user">
@@ -290,6 +317,7 @@
           </div>
         </div>
 
+        <div class="settings-section-label">Conta</div>
         <div class="settings-menu-group">
           <button class="settings-menu-item" data-target="profile">
             <span class="settings-menu-icon" data-icon="profile"></span>
@@ -303,6 +331,7 @@
           </button>
         </div>
 
+        <div class="settings-section-label">Funcionalidades</div>
         <div class="settings-menu-group">
           <button class="settings-menu-item" data-target="capabilities">
             <span class="settings-menu-icon" data-icon="capabilities"></span>
@@ -316,6 +345,7 @@
           </button>
         </div>
 
+        <div class="settings-section-label">Personalização</div>
         <div class="settings-menu-group">
           <button class="settings-menu-item" data-action="colormode">
             <span class="settings-menu-icon" data-icon="colormode"></span>
@@ -329,6 +359,7 @@
           </button>
         </div>
 
+        <div class="settings-section-label">Geral</div>
         <div class="settings-menu-group">
           <button class="settings-menu-item" data-target="privacy">
             <span class="settings-menu-icon" data-icon="privacy"></span>
@@ -478,6 +509,7 @@
 </div>
 
   <!-- Front-end modularizado: a ordem preserva as dependências globais existentes. -->
+  <script src="./backend-config.js"></script>
   <script src="./onboard.js"></script>
   <script src="./api-sync.js"></script>
   <script src="./chat-data.js"></script>
@@ -485,5 +517,6 @@
   <script src="./sidebar-settings.js"></script>
   <script src="./composer-input.js"></script>
   <script src="./streaming-render.js"></script>
+  <script src="./ui-refresh.js"></script>
 </body>
 </html>
