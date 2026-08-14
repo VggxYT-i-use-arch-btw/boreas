@@ -7,16 +7,17 @@ const TIERS = {
   normal: { label: "Boreas 5.8" },
   quick:  { label: "Boreas 5.7 Quick" },
   coding: { label: "Boreas Nova 5.9" },
+  codingpro: { label: "Boreas Nova 5.9 Pro" },
 };
 
-const TIER_SPEEDS = { altra: "cheapest", ultra: "cheapest", pro: "cheapest", normal: "fastest", quick: "fastest", coding: "fastest" };
+const TIER_SPEEDS = { altra: "cheapest", ultra: "cheapest", pro: "cheapest", normal: "fastest", quick: "fastest", coding: "fastest", codingpro: "fastest" };
 
 // Pro, Altra, and Nova (coding, text-only) keep vision disabled in the UI.
-const NO_VISION_TIERS = ["pro", "altra", "coding"];
-const NO_VISION_LABEL = { pro: "Pro", altra: "Altra I", coding: "Nova 5.9" };
+const NO_VISION_TIERS = ["pro", "altra", "coding", "codingpro"];
+const NO_VISION_LABEL = { pro: "Pro", altra: "Altra I", coding: "Nova 5.9", codingpro: "Nova 5.9 Pro" };
 
 // Mirrors server.js EFFORT_TIERS.
-const EFFORT_TIERS = ["altra", "pro", "ultra", "coding"];
+const EFFORT_TIERS = ["altra", "pro", "ultra", "coding", "codingpro"];
 const VALID_EFFORTS = ["default", "low", "medium", "high"];
 const EFFORT_LABELS = { default: "Padrão", low: "Baixo", medium: "Médio", high: "Alto" };
 
