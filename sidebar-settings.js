@@ -612,7 +612,7 @@ function renderPrivacyView(body) {
 async function renderFontView(body) {
   body.innerHTML = `<div id="font-list-wrap"><div class="usage-loading">Carregando...</div></div>`;
   const sessionId = localStorage.getItem("boreas_session_id");
-  let current = { theme: "dark", font: localStorage.getItem("boreas_font") || "Inter", availableFonts: [] };
+  let current = { font: localStorage.getItem("boreas_font") || "Inter", availableFonts: [] };
   if (sessionId) {
     try {
       const r = await fetch(BACKEND_URL + "/appearance", { headers: { "x-session-id": sessionId } });
@@ -637,7 +637,7 @@ async function renderFontView(body) {
     current.availableFonts.map(f =>
       `<div class="font-list-item${f === current.font ? " selected" : ""}" data-font="${f}">
         <span style="font-family:'${f}',sans-serif">${f}</span>
-        <span class="colormode-option-check">${SETTINGS_ICONS.check}</span>
+        <span class="settings-check">${SETTINGS_ICONS.check}</span>
       </div>`
     ).join("") + `</div>`;
   wrap.querySelectorAll(".font-list-item").forEach(item => {
@@ -673,7 +673,9 @@ function applyFont(font) {
   const saved = localStorage.getItem("boreas_font");
   if (saved && saved !== "Inter") applyFont(saved);
 })();
-
+// O tema claro foi removido; elimina a preferência antiga sem afetar outras
+// configurações locais do usuário.
+try { localStorage.removeItem("boreas_theme"); } catch {}
 
 document.getElementById("sidebar-settings-btn").addEventListener("click", async () => {
   closeSidebar();

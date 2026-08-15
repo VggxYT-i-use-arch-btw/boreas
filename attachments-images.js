@@ -80,22 +80,45 @@ function createAttachCard({ name, mime, removable = false, onRemove = null, onCl
 }
 
 function createFileCard(name, b64, mime) {
-  const card = createAttachCard({
-    name, mime, removable: false,
-    onClick: () => {
-      // Converte o base64 em arquivo antes de iniciar o download e falha de forma controlada se o conteúdo vier inválido.
-      try {
-        const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-        const url   = URL.createObjectURL(new Blob([bytes], { type: mime }));
-        Object.assign(document.createElement("a"), { href: url, download: name }).click();
-        URL.revokeObjectURL(url);
-      } catch (e) {
-        console.error("[createFileCard] base64 corrompido:", e);
-        alert("Não foi possível baixar o arquivo — os dados estão corrompidos.");
-      }
-    },
+  // Preserva acentos/Unicode e remove somente caracteres que quebrariam o
+  // atributo download ou permitiriam transformar o nome em um caminho.
+  const downloadName = String(name ?? "arquivo")
+    .normalize("NFC")
+    .replace(/[\u0000-\u001f\u007f]/g, "_")
+    .replace(/[\\/]/g, "_")
+    .trim()
+    .slice(0, 180) || "arquivo";
+  const card = createAttachCard({ name: downloadName, mime, removable: false });
+  card.classList.add("file-download-card");
+  card.title = "Baixar arquivo";
+
+  const downloadBtn = document.createElement("button");
+  downloadBtn.type = "button";
+  downloadBtn.className = "file-download-btn";
+  downloadBtn.setAttribute("aria-label", `Baixar ${downloadName}`);
+  downloadBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M4 19h16"></path></svg>`;
+  downloadBtn.addEventListener("click", event => {
+    event.stopPropagation();
+    // Converte o base64 em arquivo antes de iniciar o download. O Blob evita
+    // que emojis, acentos e caracteres não latinos sejam perdidos em data URLs.
+    try {
+      const raw = String(b64 ?? "");
+      const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: mime || "application/octet-stream" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = downloadName;
+      link.rel = "noopener";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      console.error("[createFileCard] base64 corrompido:", e);
+      alert("Não foi possível baixar o arquivo — os dados estão corrompidos.");
+    }
   });
-  card.title = "Clique para baixar";
+  card.appendChild(downloadBtn);
   return card;
 }
 
@@ -417,4 +440,3 @@ document.querySelectorAll("img").forEach(img => {
 document.addEventListener("contextmenu", e => {
   if (e.target.tagName === "IMG") e.preventDefault();
 });
-

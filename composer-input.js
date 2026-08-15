@@ -146,6 +146,7 @@ const messagesEl = document.getElementById("messages");
 const scrollBottomBtn = document.getElementById("scroll-bottom-btn");
 
 let autoScroll = true;
+let _scrollFrame = 0;
 function updateScrollBtn() {
   scrollBottomBtn.classList.toggle("show", !autoScroll);
 }
@@ -156,11 +157,8 @@ messagesEl.addEventListener("scroll", () => {
   else if (dist > 80) autoScroll = false;
   updateScrollBtn();
 });
-function hasScrollableContent() {
-  return messagesEl.scrollHeight - messagesEl.clientHeight > 4;
-}
 messagesEl.addEventListener("wheel", e => {
-  if (e.deltaY < 0 && hasScrollableContent()) { autoScroll = false; updateScrollBtn(); }
+  if (e.deltaY < 0) { autoScroll = false; updateScrollBtn(); }
 }, { passive: true });
 let _touchStartY = null;
 messagesEl.addEventListener("touchstart", e => {
@@ -169,15 +167,24 @@ messagesEl.addEventListener("touchstart", e => {
 messagesEl.addEventListener("touchmove", e => {
   if (_touchStartY == null) return;
   const dy = (e.touches[0]?.clientY ?? _touchStartY) - _touchStartY;
-  if (dy > 4 && hasScrollableContent()) { autoScroll = false; updateScrollBtn(); } // arrastou pra baixo = subiu na conversa
+  if (dy > 4) { autoScroll = false; updateScrollBtn(); } // arrastou pra baixo = subiu na conversa
 }, { passive: true });
 messagesEl.addEventListener("touchend", () => { _touchStartY = null; }, { passive: true });
 scrollBottomBtn.addEventListener("click", () => scrollToBottom(true));
 
 function scrollToBottom(force) {
   if (force) autoScroll = true;
-  if (autoScroll) messagesEl.scrollTop = messagesEl.scrollHeight;
   updateScrollBtn();
+  if (!autoScroll || _scrollFrame) return;
+
+  // Streaming can call this function several times per network chunk. Keep
+  // one write per frame so reading scrollHeight and updating scrollTop do not
+  // force repeated layout passes while the answer is being rendered.
+  _scrollFrame = requestAnimationFrame(() => {
+    _scrollFrame = 0;
+    if (autoScroll) messagesEl.scrollTop = messagesEl.scrollHeight;
+    updateScrollBtn();
+  });
 }
 const msgInput   = document.getElementById("msg-input");
 const sendBtn    = document.getElementById("send-btn");

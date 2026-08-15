@@ -157,6 +157,7 @@ const BoreasSync = (() => {
           headers,
           body: bodyStr,
           signal: controller.signal,
+          credentials: "include",
           ...(useKeepalive ? { keepalive: true } : {}),
         });
         clearTimeout(timer);

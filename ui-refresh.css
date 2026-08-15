@@ -23,7 +23,7 @@
   --user-font: 'Plus Jakarta Sans', 'Inter', sans-serif;
 }
 
-html, body { position: fixed; inset: 0; background: var(--bg); overflow: hidden; overscroll-behavior: none; }
+html, body { background: var(--bg); overflow: hidden; }
 *, *::before, *::after { box-sizing: border-box; }
 body {
   font-family: var(--user-font);
@@ -153,6 +153,16 @@ button:active { transform: scale(.97); }
 .bubble.user { border-radius: 19px 19px 6px 19px; background: linear-gradient(135deg, rgba(120,93,240,.34), rgba(72,91,180,.25)); border: 1px solid rgba(170,145,255,.22); box-shadow: none; }
 .bubble.bot { padding: 8px 0; }
 
+/* Long chats keep their DOM for search, editing and regeneration, but the
+   browser does not need to paint every old message at once. The content is
+   rendered normally as soon as it enters the viewport. */
+@supports (content-visibility: auto) {
+  #messages > .msg-row {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 120px;
+  }
+}
+
 #starter-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; width: min(920px, calc(100% - 32px)); margin: 0 auto 10px; }
 #starter-chips button { padding: 10px 14px; border: 1px solid var(--border-soft); border-radius: 999px; background: var(--surface); color: var(--text-dim); font-size: 12px; font-weight: 600; }
 #starter-chips button:hover { color: var(--text); border-color: rgba(167,139,250,.38); background: var(--accent-soft); }
@@ -274,7 +284,7 @@ button:active { transform: scale(.97); }
 .sidebar-empty-msg { padding: 20px 12px; }
 
 #send-btn { overflow: hidden; }
-#send-btn img { width: 65%; height: 65%; object-fit: contain; display: block; }
+#send-btn img { width: 100%; height: 100%; object-fit: contain; display: block; }
 #send-btn:disabled img { opacity: .48; }
 
 /* The desktop attachment picker is an anchored command card. Mobile keeps
@@ -509,3 +519,60 @@ button:active { transform: scale(.97); }
 .tool-activity-body { display: none; padding: 0 12px 12px 47px; }
 .tool-activity-card.expanded .tool-activity-body { display: block; }
 .tool-activity-output { max-height: 180px; margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-faint); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Resumo unificado: uma única linha discreta durante o stream e uma timeline
+   compacta ao expandir, inspirada no painel de resumo mobile da referência. */
+.thinking-segment-pill {
+  width: min(100%, 720px); min-height: 30px; margin: 2px 0 1px; padding: 5px 2px;
+  border: 0; border-radius: 8px; background: transparent; color: var(--text-faint);
+  font-size: 12px; font-weight: 500; justify-content: flex-start; gap: 8px;
+}
+.thinking-segment-pill:hover, .thinking-segment-pill.expanded { background: transparent; color: var(--text-dim); }
+.thinking-segment-icon { color: var(--text-faint); opacity: .8; }
+.thinking-segment-status { margin-left: auto; color: var(--text-ghost); font-size: 11px; font-weight: 400; }
+.thinking-segment-chevron { color: var(--text-ghost); }
+.thinking-segment-detail {
+  max-width: 720px; margin: 0 0 8px; padding: 5px 0 5px 25px;
+  border-left: 1px solid rgba(255,255,255,.13); border-radius: 0; background: transparent;
+  color: var(--text-faint); font-size: 13px; line-height: 1.55;
+}
+.thinking-segment-text { max-height: 220px; overflow-y: auto; color: var(--text); }
+.thinking-segment-items { display: flex; flex-direction: column; margin-top: 7px; }
+.tool-activity-card {
+  width: 100%; margin: 0; border: 0; border-radius: 8px; background: transparent;
+  overflow: visible; transition: color .16s, background .16s;
+}
+.tool-activity-card:hover, .tool-activity-card.expanded { border-color: transparent; background: rgba(255,255,255,.035); }
+.tool-activity-header { min-height: 31px; padding: 4px 5px; gap: 8px; border-radius: 7px; }
+.tool-activity-icon { width: 19px; height: 19px; flex-basis: 19px; border-radius: 6px; background: transparent; color: var(--text-ghost); }
+.tool-activity-icon svg { width: 15px; height: 15px; }
+.tool-activity-copy { flex-direction: row; align-items: baseline; gap: 7px; min-width: 0; }
+.tool-activity-title { color: var(--text-faint); font-size: 12px; font-weight: 500; white-space: nowrap; }
+.tool-activity-value { color: var(--text-ghost); font-size: 11px; }
+.tool-activity-status { display: none; }
+.tool-activity-chevron { width: 10px; height: 10px; color: var(--text-ghost); }
+.tool-activity-body { padding: 0 8px 7px 32px; }
+.tool-activity-output { max-height: 160px; font-size: 11px; }
+
+/* Card horizontal para arquivos gerados pelo modelo. Os anexos do composer
+   continuam usando o card quadrado original. */
+.file-download-card {
+  width: min(100%, 520px); height: 76px; box-sizing: border-box; padding: 12px 14px;
+  flex-direction: row; align-items: center; justify-content: flex-start; gap: 14px;
+  border-radius: 18px; cursor: default;
+}
+.file-download-card .attach-card-icon { width: 46px; height: 46px; border-radius: 13px; }
+.file-download-card .attach-card-icon svg { width: 28px; height: 28px; }
+.file-download-card > div:nth-last-of-type(1) { min-width: 0; flex: 1; }
+.file-download-card .attach-card-name { font-size: 14px; }
+.file-download-card .attach-card-meta { font-size: 11px; color: var(--text-ghost); text-transform: uppercase; letter-spacing: .04em; }
+.file-download-btn {
+  display: grid; place-items: center; width: 34px; height: 34px; flex: 0 0 34px;
+  border: 0; border-radius: 10px; background: transparent; color: var(--text-faint); cursor: pointer;
+}
+.file-download-btn:hover { color: var(--text); background: var(--hover); }
+
+@media (max-width: 600px) {
+  .file-download-card { width: 100%; height: 70px; }
+  .thinking-segment-detail { padding-left: 19px; }
+}

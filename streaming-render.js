@@ -15,19 +15,47 @@ function clearPendingGen() {
   try { localStorage.removeItem(PENDING_GEN_KEY); } catch {}
 }
 
+let syncInFlight = null;
+let syncInFlightGenId = null;
+let syncRetryTimer = null;
+let syncRetryAttempt = 0;
+
+function schedulePendingSync(genId) {
+  if (syncRetryTimer || !genId || navigator.onLine === false) return;
+  if (getPendingGen()?.genId !== genId) return;
+  const delay = Math.min(16000, 1000 * (2 ** Math.min(syncRetryAttempt++, 4)));
+  syncRetryTimer = setTimeout(() => {
+    syncRetryTimer = null;
+    syncGeneration(genId, { resetRetry: false });
+  }, delay);
+}
+
 function showSyncBanner(genId) {
   document.getElementById("resume-banner")?.remove();
   document.getElementById("sync-banner")?.remove();
   const banner = document.createElement("div");
   banner.id = "sync-banner";
   banner.className = "resume-banner-el";
-  banner.innerHTML = `<span>🔌 Conexão perdida — a resposta pode ter continuado sendo gerada.</span><button id="sync-btn">Sincronizar ↻</button>`;
+  banner.innerHTML = `<span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12h8"></path><path d="M12 8v8"></path><path d="M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z"></path></svg> Conexão interrompida — a resposta pode ter continuado.</span><button id="sync-btn">Reconectar</button>`;
   messagesEl.appendChild(banner);
   scrollToBottom();
   document.getElementById("sync-btn").addEventListener("click", () => syncGeneration(genId));
 }
 
-async function syncGeneration(genId) {
+function syncGeneration(genId, { resetRetry = true } = {}) {
+  if (!genId) return Promise.resolve(false);
+  if (syncInFlight && syncInFlightGenId === genId) return syncInFlight;
+  clearTimeout(syncRetryTimer); syncRetryTimer = null;
+  if (resetRetry) syncRetryAttempt = 0;
+  syncInFlightGenId = genId;
+  syncInFlight = syncGenerationOnce(genId).finally(() => {
+    syncInFlight = null;
+    syncInFlightGenId = null;
+  });
+  return syncInFlight;
+}
+
+async function syncGenerationOnce(genId) {
   document.getElementById("sync-banner")?.remove();
   loading = true; showStopBtn();
   currentGenId = genId;
@@ -35,12 +63,15 @@ async function syncGeneration(genId) {
   let masterRow = null, masterCol = null, responseBubble = null;
   let reply = "", segmentReply = "";
   let msgAttachments = [];
+  const activity = {};
+  let sawDone = false;
+  let syncMissing = false;
   function ensureRow() {
     if (!masterRow) {
       removeTyping();
       masterRow = document.createElement("div"); masterRow.className = "msg-row bot";
       const avatar = document.createElement("div"); avatar.className = "avatar";
-      avatar.innerHTML = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" draggable="false">`;
+      avatar.innerHTML = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" loading="lazy" decoding="async" draggable="false">`;
       masterCol = document.createElement("div"); masterCol.className = "bot-col"; masterCol.style.gap = "4px";
       masterRow.appendChild(avatar); masterRow.appendChild(masterCol);
       messagesEl.appendChild(masterRow);
@@ -50,6 +81,7 @@ async function syncGeneration(genId) {
   try {
     const res = await fetch(`${BACKEND_URL}/chat/sync/${genId}`, {
       headers: { "x-session-id": localStorage.getItem("boreas_session_id") ?? "" },
+      credentials: "include",
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -60,11 +92,11 @@ async function syncGeneration(genId) {
       const lines = buffer.split("\n"); buffer = lines.pop();
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
-        const raw = line.slice(6).trim(); if (raw === "[DONE]") continue;
+        const raw = line.slice(6).trim(); if (raw === "[DONE]") { sawDone = true; continue; }
         let chunk; try { chunk = JSON.parse(raw); } catch { continue; }
 
         if (chunk.type === "sync_missing") {
-
+          syncMissing = true;
           continue;
         }
         if (chunk.type === "gen_id" || chunk.type === "heartbeat" || chunk.type === "token_exhausted") continue;
@@ -74,26 +106,33 @@ async function syncGeneration(genId) {
         if (chunk.type === "ask_user_prompt") { ensureRow(); const _aupAns = await renderAskUserPromptCard(masterCol, chunk.promptId, chunk.questions); msgAttachments.push({ type: "ask_user_prompt", promptId: chunk.promptId, questions: chunk.questions, answers: _aupAns ?? null, timedOut: !_aupAns }); continue; }
         if (chunk.type === "step") {
           ensureRow(); responseBubble = null; segmentReply = "";
-          ensureToolActivityCard(masterCol, chunk);
+          ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
+          ensureToolActivityCard(masterCol, chunk, activity);
           scrollToBottom(); continue;
         }
         if (chunk.type === "sources") { ensureRow(); masterCol.appendChild(createSourcesButton(chunk.results)); continue; }
         if (chunk.type === "error") { ensureRow(); appendMessage("bot", `Erro: ${chunk.message}`); continue; }
 
         const delta = chunk.choices?.[0]?.delta;
+        if (delta?.reasoning_content) {
+          ensureRow();
+          ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
+          appendThinkingSegment(activity, delta.reasoning_content);
+        }
         if (delta?.content) {
           ensureRow();
           reply += delta.content;
           segmentReply += delta.content;
           if (!responseBubble) { responseBubble = document.createElement("div"); responseBubble.className = "bubble bot"; masterCol.appendChild(responseBubble); }
-          renderStreamingMarkdown(responseBubble, segmentReply);
+          scheduleMarkdownRender(responseBubble, segmentReply);
           scrollToBottom();
         }
       }
     }
 
-    finishStreamingMarkdown(responseBubble);
-    clearPendingGen();
+    if (responseBubble) renderMarkdown(responseBubble, segmentReply);
+    finalizeThinkingSegment(activity);
+    if (sawDone || syncMissing) clearPendingGen();
     if (reply || msgAttachments.length) {
       messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
       saveCurrentMessages();
@@ -101,9 +140,13 @@ async function syncGeneration(genId) {
       if (responseBubble) responseBubble._rawText = reply;
     }
   } catch (e) {
-
-    ensureRow();
-    appendMessage("bot", "Não foi possível sincronizar agora. Tente de novo em instantes.");
+    if (getPendingGen()?.genId === genId) {
+      showSyncBanner(genId);
+      schedulePendingSync(genId);
+    } else {
+      ensureRow();
+      appendMessage("bot", "Não foi possível sincronizar agora. Tente de novo em instantes.");
+    }
   } finally {
     loading = false; hideStopBtn(); currentGenId = null;
   }
@@ -144,7 +187,8 @@ function showNoResponseError(retryFn) {
   }, { once: true });
 }
 
-const SEND_ICON = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/send_msg.png" alt="Enviar mensagem" draggable="false">`;
+// Usa um ícone de envio inline para não depender de uma imagem remota.
+const SEND_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--bg)"><path d="M3 11.5L21 3l-6.5 18-3.5-7.5L3 11.5z"/></svg>`;
 const STOP_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--bg)"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`;
 
 function showStopBtn() {
@@ -254,45 +298,26 @@ if (typeof marked !== 'undefined') {
   });
 }
 
-function _sanitizeMarkdownHtml(rawHtml) {
-  if (typeof DOMPurify !== 'undefined') {
-    return DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] });
-  }
-  return rawHtml;
-}
+const _markdownRenderState = new WeakMap();
+const _mathMarkerRe = /\$\$|\$[^$\n]+\$|\\\(|\\\[/;
+const MARKDOWN_RENDER_INTERVAL_MS = 33;
 
-function _renderMarkdownBlockHtml(text) {
-  if (typeof marked !== 'undefined') {
-    return _sanitizeMarkdownHtml(marked.parse(text));
-  }
-  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-}
-
-// Static/history renderer. This is intentionally separate from the live
-// renderer below: history can afford one complete parse because it happens
-// once per message, not once per token.
-function renderMarkdown(el, text) {
+function renderMarkdownNow(el, text) {
+  if (!el || el._renderedMarkdownText === text) return;
+  el._renderedMarkdownText = text;
   try {
-    el.innerHTML = _renderMarkdownBlockHtml(text);
-    _queueMathRender(el);
-  } catch(e) {
-    el.textContent = text;
-  }
-}
+    if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+      const rawHtml = marked.parse(text);
+      el.innerHTML = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] });
+    } else {
 
-function _parseMarkdownFragment(text) {
-  const holder = document.createElement('div');
-  holder.innerHTML = _renderMarkdownBlockHtml(text);
-  const nodes = Array.from(holder.childNodes);
-  return nodes;
-}
-
-function _queueMathRenderNode(node) {
-  if (typeof renderMathInElement === 'undefined' || !node?.isConnected) return;
-  const run = () => {
-    if (!node.isConnected || !node.textContent?.match(/\$|\\\(|\\\[/)) return;
-    try {
-      renderMathInElement(node, {
+      el.innerHTML = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+      return;
+    }
+    // KaTeX walks the whole bubble. Most messages contain no math, so avoid
+    // paying that cost unless a math delimiter is actually present.
+    if (typeof renderMathInElement !== 'undefined' && _mathMarkerRe.test(text)) {
+      renderMathInElement(el, {
         delimiters: [
           {left:"$$",right:"$$",display:true},
           {left:"$",right:"$",display:false},
@@ -301,224 +326,37 @@ function _queueMathRenderNode(node) {
         ],
         throwOnError: false
       });
-    } catch {}
-  };
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 180 });
-  else setTimeout(run, 32);
-}
+    }
+  } catch(e) {
 
-function _looksLikeMarkdown(text) {
-  return /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|```|~~~)|[*_`\[\]\\$]/.test(text);
-}
-
-function _stripOpenFenceForLiveCode(text) {
-  const first = text.match(/^\s*(```+|~~~+)\s*([^\n]*)\n?/);
-  if (!first) return null;
-  const marker = first[1][0];
-  const lines = text.split('\n');
-  let closing = -1;
-  for (let i = 1; i < lines.length; i++) {
-    if (new RegExp(`^\\s*${marker}{3,}\\s*$`).test(lines[i])) { closing = i; break; }
+    el.textContent = text;
   }
-  const codeLines = closing >= 0 ? lines.slice(1, closing) : lines.slice(1);
-  return { language: first[2].trim(), code: codeLines.join('\n'), closed: closing >= 0 };
 }
 
-function createStreamingMarkdownRenderer(el) {
-  // Live renderer: prioritize latency and incremental DOM work. The response
-  // is append-only, so never re-parse text that has already been painted.
-  const state = {
-    el,
-    source: '',
-    stableSource: '',
-    activeNodes: [],
-    queued: false,
-    raf: 0,
-    lastPaint: 0,
-    fence: null,
-    scanPos: 0,
-    stableEnd: 0,
-    finished: false,
-    plainNode: null,
-    plainStart: 0,
-    plainRenderedLength: 0,
-  };
-
-  const clearActive = () => {
-    for (const node of state.activeNodes) node.remove();
-    state.activeNodes = [];
-    state.plainNode = null;
-  };
-
-  const appendNodes = (nodes, queueMath = true) => {
-    for (const node of nodes) {
-      state.el.appendChild(node);
-      if (queueMath && node.nodeType === 1) _queueMathRenderNode(node);
-    }
-  };
-
-  // Find the last complete Markdown block without rescanning the prefix.
-  // A block becomes immutable after a blank line outside a fenced code block.
-  const scanForStableBoundary = () => {
-    let i = state.scanPos;
-    let lineStart = i;
-    let boundary = state.stableEnd;
-    let fence = state.fence;
-    const src = state.source;
-
-    while (i < src.length) {
-      const nl = src.indexOf('\n', i);
-      if (nl < 0) break;
-      const line = src.slice(lineStart, nl);
-      const fenceMatch = line.match(/^\s*(```+|~~~+)/);
-      if (fenceMatch) {
-        const marker = fenceMatch[1][0];
-        if (!fence) fence = marker;
-        else if (fence === marker) fence = null;
-      }
-      if (!fence && line.trim() === '') boundary = nl + 1;
-      i = nl + 1;
-      lineStart = i;
-    }
-
-    state.scanPos = lineStart;
-    state.fence = fence;
-    state.stableEnd = boundary;
-  };
-
-  const commitStable = () => {
-    scanForStableBoundary();
-    if (state.stableEnd <= state.stableSource.length) return;
-
-    const newlyStable = state.source.slice(state.stableSource.length, state.stableEnd);
-    // The active tail is replaced, but committed nodes are never touched.
-    clearActive();
-    appendNodes(_parseMarkdownFragment(newlyStable));
-    state.stableSource = state.source.slice(0, state.stableEnd);
-    state.plainStart = state.stableEnd;
-    state.plainRenderedLength = 0;
-  };
-
-  const paint = (force = false) => {
-    state.queued = false;
-    state.raf = 0;
-    state.lastPaint = performance.now();
-
-    commitStable();
-
-    const tail = state.source.slice(state.stableSource.length);
-    if (!tail) return;
-
-    // Fast path for ordinary prose. Append only the newly received suffix to
-    // one Text node: no Markdown parser, sanitizer, DOM replacement or layout
-    // churn for every token.
-    if (!_looksLikeMarkdown(tail) && !state.fence) {
-      if (!state.plainNode || state.plainStart > state.source.length) {
-        clearActive();
-        state.plainNode = document.createTextNode('');
-        state.el.appendChild(state.plainNode);
-        state.activeNodes = [state.plainNode];
-        state.plainStart = state.stableSource.length;
-        state.plainRenderedLength = 0;
-      }
-      const wanted = state.source.slice(state.plainStart);
-      const delta = wanted.slice(state.plainRenderedLength);
-      if (delta) {
-        state.plainNode.appendData(delta);
-        state.plainRenderedLength = wanted.length;
-      }
-      return;
-    }
-
-    // If Markdown syntax is active, only the current unfinished tail is
-    // parsed. Previously committed blocks remain untouched.
-    clearActive();
-
-    const liveCode = _stripOpenFenceForLiveCode(tail);
-    if (liveCode && !liveCode.closed) {
-      const pre = document.createElement('pre');
-      const code = document.createElement('code');
-      const lang = liveCode.language && typeof hljs !== 'undefined' && hljs.getLanguage(liveCode.language)
-        ? liveCode.language : 'plaintext';
-      code.className = `hljs language-${lang}`;
-      code.textContent = liveCode.code;
-      pre.appendChild(code);
-      state.el.appendChild(pre);
-      state.activeNodes = [pre];
-      return;
-    }
-
-    const nodes = _parseMarkdownFragment(tail);
-    appendNodes(nodes);
-    state.activeNodes = nodes;
-  };
-
-  const schedule = () => {
-    if (state.finished || state.queued) return;
-    state.queued = true;
-    const now = performance.now();
-    const elapsed = now - state.lastPaint;
-    // Never intentionally hold a visible token batch for a long time.  A
-    // frame is the normal path; the 45 ms ceiling protects streaming latency
-    // even when frames are busy.
-    if (elapsed >= 45) {
-      // If the browser has been busy for a while, do not add another frame of
-      // latency: paint this small batch now.
-      paint();
-    } else {
-      state.raf = requestAnimationFrame(() => paint());
-    }
-  };
-
-  state.update = text => {
-    if (state.finished) return;
-    if (typeof text !== 'string') text = String(text ?? '');
-    if (text === state.source) return;
-    // The stream is append-only. If a caller supplies a shorter string, keep
-    // correctness by resetting only the active tail, never the whole history.
-    if (text.length < state.source.length || !text.startsWith(state.source)) {
-      state.source = text;
-      state.stableSource = '';
-      state.scanPos = 0;
-      state.stableEnd = 0;
-      state.fence = null;
-      clearActive();
-      state.el.textContent = '';
-      state.plainStart = 0;
-      state.plainRenderedLength = 0;
-    } else {
-      state.source = text;
-    }
-    schedule();
-  };
-
-  state.finish = () => {
-    if (state.finished) return;
-    state.finished = true;
-    if (state.raf) cancelAnimationFrame(state.raf);
-    state.raf = 0;
-    state.queued = false;
-
-    // Paint the latest tail immediately, but only that tail. This is a flush,
-    // not a complete-message render.
-    commitStable();
-    clearActive();
-    const tail = state.source.slice(state.stableSource.length);
-    if (tail) {
-      appendNodes(_parseMarkdownFragment(tail));
-    }
-  };
-
-  return state;
+function renderMarkdown(el, text) {
+  const pending = _markdownRenderState.get(el);
+  if (pending) {
+    clearTimeout(pending.timer);
+    _markdownRenderState.delete(el);
+  }
+  renderMarkdownNow(el, text);
 }
 
-function renderStreamingMarkdown(el, text) {
-  if (!el._streamRenderer) el._streamRenderer = createStreamingMarkdownRenderer(el);
-  el._streamRenderer.update(text);
-}
-
-function finishStreamingMarkdown(el) {
-  el?._streamRenderer?.finish();
+// Limit expensive Markdown/highlight/math work during live streaming while
+// keeping the final answer exact and immediately available to the user.
+function scheduleMarkdownRender(el, text) {
+  if (!el) return;
+  const pending = _markdownRenderState.get(el);
+  if (pending) {
+    pending.text = text;
+    return;
+  }
+  const state = { text, timer: 0 };
+  state.timer = setTimeout(() => {
+    _markdownRenderState.delete(el);
+    if (el.isConnected) renderMarkdownNow(el, state.text);
+  }, MARKDOWN_RENDER_INTERVAL_MS);
+  _markdownRenderState.set(el, state);
 }
 
 // Cópia estática do TOOL_META (as outras instâncias são locais às funções de
@@ -698,7 +536,7 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
   if (role === "bot") {
     const avatar = document.createElement("div");
     avatar.className = "avatar";
-    avatar.innerHTML = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" draggable="false">`;
+    avatar.innerHTML = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" loading="lazy" decoding="async" draggable="false">`;
     row.appendChild(avatar);
   }
 
@@ -778,16 +616,17 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
           ...(hasThinking ? [{ type: "thinking", text: thinking }] : []),
           ...(hasSteps ? steps.map(s => ({ type: "tool", ...s })) : []),
         ];
+    const activityState = {};
     sequence.forEach(item => {
       if (item?.type === "thinking" && String(item.text ?? "").trim()) {
-        const state = {};
-        ensureThinkingSegment(state, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
-        appendThinkingSegment(state, String(item.text));
-        finalizeThinkingSegment(state);
+        ensureThinkingSegment(activityState, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
+        appendThinkingSegment(activityState, String(item.text));
       } else if (item?.type === "tool") {
-        ensureToolActivityCard(col, item);
+        ensureThinkingSegment(activityState, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
+        ensureToolActivityCard(col, item, activityState);
       }
     });
+    finalizeThinkingSegment(activityState);
   }
 
   // Reconstrói, a partir do histórico salvo, os cards de deep research/loop
@@ -812,6 +651,8 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
     images.forEach(src => {
       const img = document.createElement("img");
       img.src = src;
+      img.loading = "lazy";
+      img.decoding = "async";
       img.addEventListener("click", e => { e.stopPropagation(); openLightbox(src); });
       grid.appendChild(img);
     });
@@ -1024,7 +865,7 @@ async function retryFromUser(userRow) {
   fakeRow._msgIndex = msgIdx + 1;
   fakeRow._isRetryOfUser = true;
   const fakeAvatar = document.createElement("div"); fakeAvatar.className = "avatar";
-  fakeAvatar.innerHTML = `<img src="${BOT_IMG_SRC}" style="width:42px;height:42px;object-fit:contain;opacity:0.95" draggable="false">`;
+  fakeAvatar.innerHTML = `<img src="${BOT_IMG_SRC}" style="width:42px;height:42px;object-fit:contain;opacity:0.95" loading="lazy" decoding="async" draggable="false">`;
   const fakeCol     = document.createElement("div"); fakeCol.className = "bot-col";
   const fakeBubble  = document.createElement("div"); fakeBubble.className = "bubble bot";
   fakeBubble.innerHTML = `<div class="typing-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>`;
@@ -1305,7 +1146,15 @@ function ensureActivityPill(state, mountFn) {
   state.pill = document.createElement("button"); state.pill.className = "tasks-pill";
   state.pill.innerHTML = `<span style="flex-shrink:0;display:flex;align-items:center;color:rgba(154,212,240,0.85)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span>Processo de pensamento<span class="tp-dots"><span></span><span></span><span></span></span><svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
   state.detail = document.createElement("div"); state.detail.className = "tasks-detail";
-  state.pill.addEventListener("click", () => { state.pill.classList.toggle("expanded"); state.detail.classList.toggle("visible"); });
+  state.pill.addEventListener("click", () => {
+    if (typeof isMobile !== "undefined" && isMobile) {
+      openSheet(state.detail.textContent.trim() || "Nenhum detalhe adicional.");
+      state.pill.classList.add("expanded");
+      return;
+    }
+    state.pill.classList.toggle("expanded");
+    state.detail.classList.toggle("visible");
+  });
   mountFn(state.pill, state.detail);
   return state;
 }
@@ -1329,10 +1178,12 @@ function ensureThinkingSegment(state, mountFn) {
   state.pill = document.createElement("button");
   state.pill.type = "button";
   state.pill.className = "thinking-segment-pill";
-  state.pill.innerHTML = `<span class="thinking-segment-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span><span>Processo de pensamento</span><span class="thinking-segment-status">Pensando</span><svg class="thinking-segment-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+  state.pill.innerHTML = `<span class="thinking-segment-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span><span>Processo de pensamento</span><span class="thinking-segment-status">Pensando</span><svg class="thinking-segment-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
   state.detail = document.createElement("div"); state.detail.className = "thinking-segment-detail";
   state.textEl = document.createElement("div"); state.textEl.className = "thinking-segment-text";
+  state.itemsEl = document.createElement("div"); state.itemsEl.className = "thinking-segment-items";
   state.detail.appendChild(state.textEl);
+  state.detail.appendChild(state.itemsEl);
   state.pill.addEventListener("click", () => { state.pill.classList.toggle("expanded"); state.detail.classList.toggle("visible"); });
   mountFn(state.pill, state.detail);
   return state;
@@ -1345,12 +1196,13 @@ function finalizeThinkingSegment(state) {
   if (!state?.pill) return;
   state.pill.classList.add("is-complete");
   const status = state.pill.querySelector(".thinking-segment-status");
-  if (status) status.textContent = "Concluído";
+  if (status) status.textContent = state.toolCount ? `${state.toolCount} passos` : "Concluído";
 }
 function closeThinkingSegment(state) {
-  finalizeThinkingSegment(state);
-  if (!state) return;
-  state.pill = null; state.detail = null; state.textEl = null; state.text = "";
+  // Mantém uma única timeline por resposta. Antes cada rodada de tool fechava
+  // o segmento e criava outro cartão, o que deixava a interface fragmentada.
+  // O resumo só é finalizado quando o stream inteiro termina.
+  if (state) state.hasTool = true;
 }
 
 const TOOL_ACTIVITY_LABELS = {
@@ -1366,6 +1218,23 @@ function toolActivityLabel(tool, value) {
   const label = TOOL_ACTIVITY_LABELS[tool] ?? "Usando ferramenta";
   const detail = String(value ?? "").trim();
   return { label, detail: detail.length > 110 ? `${detail.slice(0, 107)}…` : detail };
+}
+const TOOL_ACTIVITY_ICON_PATHS = {
+  WEB_SEARCH: `<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>`,
+  WEB_FETCH: `<circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a14 14 0 0 1 0 18"></path>`,
+  BASH: `<polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line>`,
+  DELETE: `<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path><path d="M9 6V4h6v2"></path>`,
+  STR_REPLACE: `<path d="m4 17 6-6"></path><path d="m14 7 6-4-4 6"></path><path d="M3 21h6"></path>`,
+  SEND_FILE: `<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline>`,
+  CREATE_FILE: `<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M12 12v6M9 15h6"></path>`,
+  MEMORY: `<circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"></path>`,
+  PREFERENCES: `<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.1h-2.5v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H4.5v-2.5h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.8-1.8.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V4.5h2.5v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1V13h-.1a1.7 1.7 0 0 0-1.5 1z"></path>`,
+  CALCULATOR: `<rect x="5" y="2" width="14" height="20" rx="2"></rect><path d="M8 6h8M8 11h2M14 11h2M8 15h2M14 15h2M8 19h2M14 19h2"></path>`,
+  IMAGE_SEARCH: `<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4M8 13l2-2 2 2 2-2 2 2"></path>`,
+};
+function toolActivityIconSvg(tool) {
+  const paths = TOOL_ACTIVITY_ICON_PATHS[tool] ?? TOOL_ACTIVITY_ICON_PATHS.PREFERENCES;
+  return `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
 }
 function updateToolActivityCard(card, tool, value, output) {
   const { label, detail } = toolActivityLabel(tool, value);
@@ -1388,16 +1257,19 @@ function updateToolActivityCard(card, tool, value, output) {
 }
 function ensureToolActivityCard(container, step) {
   if (!container || !step) return null;
+  const activityState = arguments[2] ?? null;
+  const host = activityState?.itemsEl ?? container;
   const id = step.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-  if (!container._toolActivityCards) container._toolActivityCards = new Map();
-  let card = container._toolActivityCards.get(id);
+  if (!host._toolActivityCards) host._toolActivityCards = new Map();
+  let card = host._toolActivityCards.get(id);
   if (!card) {
     card = document.createElement("div"); card.className = "tool-activity-card";
     card.innerHTML = `<button type="button" class="tool-activity-header"><span class="tool-activity-icon"></span><span class="tool-activity-copy"><span class="tool-activity-title"></span><span class="tool-activity-value"></span></span><span class="tool-activity-status">Executando</span><svg class="tool-activity-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>`;
     card._body = document.createElement("div"); card._body.className = "tool-activity-body"; card.appendChild(card._body);
-    card.querySelector(".tool-activity-icon").textContent = TOOL_META_STATIC[step.tool]?.icon ?? "🔧";
+    card.querySelector(".tool-activity-icon").innerHTML = toolActivityIconSvg(step.tool);
     card.querySelector(".tool-activity-header").addEventListener("click", () => card.classList.toggle("expanded"));
-    container._toolActivityCards.set(id, card); container.appendChild(card);
+    host._toolActivityCards.set(id, card); host.appendChild(card);
+    if (activityState) activityState.toolCount = (activityState.toolCount ?? 0) + 1;
   }
   updateToolActivityCard(card, step.tool, step.value, step.output);
   return card;
@@ -1472,7 +1344,7 @@ function showTyping() {
   const row = document.createElement("div");
   row.className = "msg-row bot"; row.id = "typing-row";
   const avatar = document.createElement("div"); avatar.className = "avatar";
-  avatar.innerHTML = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" draggable="false">`;
+      avatar.innerHTML = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" loading="lazy" decoding="async" draggable="false">`;
   const bubble = document.createElement("div"); bubble.className = "bubble bot";
   bubble.innerHTML = `<div class="typing-dots"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>`;
   row.appendChild(avatar); row.appendChild(bubble);
@@ -1613,7 +1485,8 @@ async function regenerate(botRow, botBubble, actionsEl) {
             col.querySelectorAll(".msg-actions").forEach(el => el.remove());
             if (botBubble?.isConnected) botBubble.remove();
             responseBubble = null; currentBubbleText = "";
-            ensureToolActivityCard(col, chunk);
+            ensureThinkingSegment(activity, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
+            ensureToolActivityCard(col, chunk, activity);
             scrollToBottom();
             continue;
 
@@ -1688,7 +1561,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
               if (botBubble?.isConnected) botBubble.remove();
               responseBubble = document.createElement("div"); responseBubble.className = "bubble bot"; col.appendChild(responseBubble);
             }
-            reply += cd; currentBubbleText += cd; renderStreamingMarkdown(responseBubble, currentBubbleText);
+            reply += cd; currentBubbleText += cd; scheduleMarkdownRender(responseBubble, currentBubbleText);
             responseBubble._rawText = currentBubbleText;
             scrollToBottom(); await new Promise(r => setTimeout(r, 0));
           }
@@ -1696,6 +1569,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
       }
     }
 
+    if (responseBubble) renderMarkdown(responseBubble, currentBubbleText);
     finalizeThinkingSegment(activity);
 
     if (reply || msgAttachments.length) {
@@ -1867,7 +1741,7 @@ async function send() {
     const BRAIN_ICON = `<span style="flex-shrink:0;display:flex;align-items:center;color:rgba(154,212,240,0.85)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span>`;
     const CHEVRON = `<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
     const DOTS = `<span style="display:inline-flex;gap:3px;margin-left:2px"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
-    const BOT_IMG = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" draggable="false">`;
+    const BOT_IMG = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" loading="lazy" decoding="async" draggable="false">`;
 
     function ensureMasterRow() {
       if (!masterRow) {
@@ -1946,7 +1820,8 @@ async function send() {
             ensureMasterRow();
             masterCol.querySelectorAll(".msg-actions").forEach(el => el.remove());
             responseBubble = null; currentBubbleText = "";
-            ensureToolActivityCard(masterCol, chunk);
+            ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
+            ensureToolActivityCard(masterCol, chunk, activity);
             scrollToBottom();
             continue;
             // Fecha a bolha atual quando uma nova tool call chega, para separar trechos de texto em bolhas diferentes.
@@ -2082,7 +1957,7 @@ async function send() {
               if (pendingSources?.length) actions.appendChild(createSourcesButton(pendingSources));
               masterCol.appendChild(actions);
             }
-            reply += contentDelta; currentBubbleText += contentDelta; renderStreamingMarkdown(responseBubble, currentBubbleText);
+            reply += contentDelta; currentBubbleText += contentDelta; scheduleMarkdownRender(responseBubble, currentBubbleText);
             responseBubble._rawText = currentBubbleText;
             scrollToBottom();
             await new Promise(r => setTimeout(r, 0));
@@ -2097,19 +1972,23 @@ async function send() {
         try {
           const chunk2 = JSON.parse(raw2);
           const cd2 = chunk2.choices?.[0]?.delta?.content ?? "";
-          if (cd2) { reply += cd2; if (responseBubble) renderStreamingMarkdown(responseBubble, reply); }
+          if (cd2) {
+            reply += cd2;
+            currentBubbleText += cd2;
+            if (responseBubble) scheduleMarkdownRender(responseBubble, currentBubbleText);
+          }
         } catch {}
       }
     }
+    if (responseBubble) renderMarkdown(responseBubble, currentBubbleText);
     finalizeThinkingSegment(activity);
-    finishStreamingMarkdown(responseBubble);
 
     removeTyping();
 
     if (!responseBubble && reply) {
       ensureMasterRow();
       responseBubble = document.createElement("div"); responseBubble.className = "bubble bot";
-      renderStreamingMarkdown(responseBubble, reply);
+      renderMarkdown(responseBubble, reply);
       masterCol.appendChild(responseBubble);
       const actions2 = document.createElement("div"); actions2.className = "msg-actions";
       const copyBtn2 = document.createElement("button"); copyBtn2.className = "msg-action-btn";
@@ -2271,7 +2150,7 @@ async function resumePending(pluginOverride) {
     const BRAIN_ICON = `<span style="flex-shrink:0;display:flex;align-items:center;color:rgba(154,212,240,0.85)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span>`;
     const CHEVRON = `<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
     const DOTS = `<span style="display:inline-flex;gap:3px;margin-left:2px"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
-    const BOT_IMG = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" draggable="false">`;
+    const BOT_IMG = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" loading="lazy" decoding="async" draggable="false">`;
 
     function ensureMasterRowR() {
       if (!masterRow) {
@@ -2341,7 +2220,8 @@ async function resumePending(pluginOverride) {
             ensureMasterRowR();
             masterCol.querySelectorAll(".msg-actions").forEach(el => el.remove());
             responseBubble = null;
-            ensureToolActivityCard(masterCol, chunk);
+            ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
+            ensureToolActivityCard(masterCol, chunk, activity);
             scrollToBottom(); continue;
             ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
             const stepsDetail = activity.detail;
@@ -2437,7 +2317,7 @@ async function resumePending(pluginOverride) {
               if (pendingSourcesR?.length) actions.appendChild(createSourcesButton(pendingSourcesR));
               masterCol.appendChild(actions);
             }
-            reply += cd; renderStreamingMarkdown(responseBubble, reply);
+            reply += cd; scheduleMarkdownRender(responseBubble, reply);
             scrollToBottom();
             await new Promise(r => setTimeout(r, 0));
           }
@@ -2445,8 +2325,8 @@ async function resumePending(pluginOverride) {
       }
     }
 
+    if (responseBubble) renderMarkdown(responseBubble, reply);
     finalizeThinkingSegment(activity);
-    finishStreamingMarkdown(responseBubble);
     removeTyping();
     if (!responseBubble && !reply && !reasoning) appendMessage("bot", "Sem resposta.");
     messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
@@ -2497,7 +2377,9 @@ async function resumePending(pluginOverride) {
 
   // Ao abrir o app, só retoma um chat salvo quando existe uma geração pendente; caso contrário, começa um chat novo.
   const pendingBoot = getPendingGen();
-  const shouldResumePendingChat = pendingBoot?.genId && pendingBoot.chatId && _chatsMeta[pendingBoot.chatId];
+  // O índice remoto pode chegar depois do primeiro paint; o chat pendente é
+  // uma chave persistida independente do timing da sidebar.
+  const shouldResumePendingChat = pendingBoot?.genId && pendingBoot.chatId;
 
   if (shouldResumePendingChat) {
     await loadChat(pendingBoot.chatId);
@@ -2510,8 +2392,26 @@ async function resumePending(pluginOverride) {
   // Mostra o banner de sincronização quando existe uma geração pendente que ainda pode ser retomada.
   if (pending?.genId && pending.chatId === localStorage.getItem(ACTIVE_KEY)) {
     showSyncBanner(pending.genId);
+    setTimeout(() => {
+      const current = getPendingGen();
+      if (current?.genId === pending.genId && navigator.onLine !== false) syncGeneration(pending.genId);
+    }, 120);
   }
 })();
+
+function resumePendingGenerationIfNeeded() {
+  const pending = getPendingGen();
+  if (!pending?.genId || pending.chatId !== localStorage.getItem(ACTIVE_KEY)) return;
+  if (loading || syncInFlight || navigator.onLine === false) return;
+  syncGeneration(pending.genId);
+}
+
+window.addEventListener("online", resumePendingGenerationIfNeeded);
+window.addEventListener("pageshow", resumePendingGenerationIfNeeded);
+window.addEventListener("focus", resumePendingGenerationIfNeeded);
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") resumePendingGenerationIfNeeded();
+});
 
 setGreeting();
 updateSidebarUser();
