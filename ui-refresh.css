@@ -274,7 +274,7 @@ button:active { transform: scale(.97); }
 .sidebar-empty-msg { padding: 20px 12px; }
 
 #send-btn { overflow: hidden; }
-#send-btn img { width: 100%; height: 100%; object-fit: contain; display: block; }
+#send-btn img { width: 50%; height: 50%; object-fit: contain; display: block; }
 #send-btn:disabled img { opacity: .48; }
 
 /* The desktop attachment picker is an anchored command card. Mobile keeps
