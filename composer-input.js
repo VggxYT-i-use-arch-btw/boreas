@@ -156,8 +156,11 @@ messagesEl.addEventListener("scroll", () => {
   else if (dist > 80) autoScroll = false;
   updateScrollBtn();
 });
+function hasScrollableContent() {
+  return messagesEl.scrollHeight - messagesEl.clientHeight > 4;
+}
 messagesEl.addEventListener("wheel", e => {
-  if (e.deltaY < 0) { autoScroll = false; updateScrollBtn(); }
+  if (e.deltaY < 0 && hasScrollableContent()) { autoScroll = false; updateScrollBtn(); }
 }, { passive: true });
 let _touchStartY = null;
 messagesEl.addEventListener("touchstart", e => {
@@ -166,7 +169,7 @@ messagesEl.addEventListener("touchstart", e => {
 messagesEl.addEventListener("touchmove", e => {
   if (_touchStartY == null) return;
   const dy = (e.touches[0]?.clientY ?? _touchStartY) - _touchStartY;
-  if (dy > 4) { autoScroll = false; updateScrollBtn(); } // arrastou pra baixo = subiu na conversa
+  if (dy > 4 && hasScrollableContent()) { autoScroll = false; updateScrollBtn(); } // arrastou pra baixo = subiu na conversa
 }, { passive: true });
 messagesEl.addEventListener("touchend", () => { _touchStartY = null; }, { passive: true });
 scrollBottomBtn.addEventListener("click", () => scrollToBottom(true));

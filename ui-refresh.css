@@ -23,7 +23,7 @@
   --user-font: 'Plus Jakarta Sans', 'Inter', sans-serif;
 }
 
-html, body { background: var(--bg); overflow: hidden; }
+html, body { position: fixed; inset: 0; background: var(--bg); overflow: hidden; overscroll-behavior: none; }
 *, *::before, *::after { box-sizing: border-box; }
 body {
   font-family: var(--user-font);
@@ -33,22 +33,6 @@ body {
     radial-gradient(900px 600px at 88% -10%, rgba(95, 65, 180, .17), transparent 65%),
     radial-gradient(700px 500px at 0% 100%, rgba(20, 90, 125, .10), transparent 62%),
     var(--bg);
-}
-
-body.theme-light {
-  --bg: #f5f6fa;
-  --bg-elev: #ffffff;
-  --surface: rgba(15, 23, 42, .055);
-  --surface-strong: rgba(15, 23, 42, .09);
-  --border: rgba(15, 23, 42, .12);
-  --border-soft: rgba(15, 23, 42, .07);
-  --text: #10121a;
-  --text-dim: rgba(16, 18, 26, .66);
-  --text-faint: rgba(16, 18, 26, .45);
-  --text-ghost: rgba(16, 18, 26, .3);
-  --chip: #e8eaf1;
-  --hover: rgba(15, 23, 42, .08);
-  background: radial-gradient(700px 460px at 90% -10%, rgba(139, 92, 246, .12), transparent 65%), var(--bg);
 }
 
 button, input, textarea { font-family: inherit; }
@@ -235,9 +219,8 @@ button:active { transform: scale(.97); }
 .settings-input, .settings-textarea { padding: 13px 14px; border-radius: 13px; background: var(--surface); border-color: var(--border-soft); }
 .settings-save-btn { border-radius: 13px; background: linear-gradient(135deg, #765cf8, #9d6dff); }
 .settings-logout-btn { margin-top: 14px; border-radius: 14px; }
-#colormode-modal-backdrop, #coming-soon-overlay, #rename-overlay, #resume-overlay { background: rgba(3,4,9,.72); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
-.colormode-modal, .coming-soon-card, .rename-card, .resume-card { border-color: var(--border); border-radius: 22px; background: rgba(17,20,30,.96); box-shadow: var(--shadow-lg); }
-.colormode-option.selected { border-color: rgba(167,139,250,.55); background: var(--accent-soft); }
+#coming-soon-overlay, #rename-overlay, #resume-overlay { background: rgba(3,4,9,.72); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+.coming-soon-card, .rename-card, .resume-card { border-color: var(--border); border-radius: 22px; background: rgba(17,20,30,.96); box-shadow: var(--shadow-lg); }
 .coming-soon-emoji { filter: grayscale(.2); }
 .rename-card, .resume-card { padding: 26px; }
 #rename-input { background: var(--surface); border-color: var(--border-soft); }

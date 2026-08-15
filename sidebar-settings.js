@@ -249,7 +249,6 @@ const SETTINGS_ICONS = {
   usage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="100%" height="100%"><path d="M3 3v18h18"/><path d="M7 15l4-5 3 3 5-7"/></svg>',
   capabilities: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="100%" height="100%"><line x1="4" y1="6" x2="20" y2="6"/><circle cx="9" cy="6" r="2" fill="var(--bg)"/><line x1="4" y1="12" x2="20" y2="12"/><circle cx="16" cy="12" r="2" fill="var(--bg)"/><line x1="4" y1="18" x2="20" y2="18"/><circle cx="11" cy="18" r="2" fill="var(--bg)"/></svg>',
   connectors: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="100%" height="100%"><path d="M9 2v4M15 2v4M7 6h10l-1 5a5 5 0 0 1-8 0L7 6Z"/><path d="M12 15v3M9 21h6"/></svg>',
-  colormode: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="100%" height="100%"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18Z" fill="currentColor" stroke="none"/></svg>',
   font: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="100%" height="100%"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 7v13"/></svg>',
   privacy: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" width="100%" height="100%"><path d="M12 2 4 5v6c0 5 3.4 8.7 8 11 4.6-2.3 8-6 8-11V5l-8-3Z"/></svg>',
   chevron: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" width="100%" height="100%"><polyline points="9 18 15 12 9 6"/></svg>',
@@ -322,7 +321,6 @@ document.querySelectorAll(".settings-menu-item[data-target]").forEach(btn => {
     else openSettingsSubview(btn.dataset.target);
   });
 });
-document.querySelector('.settings-menu-item[data-action="colormode"]').addEventListener("click", openColorModeModal);
 
 async function renderProfileView(body) {
   body.innerHTML = `
@@ -676,42 +674,6 @@ function applyFont(font) {
   if (saved && saved !== "Inter") applyFont(saved);
 })();
 
-function applyTheme(theme) {
-  let effective = theme;
-  if (theme === "system") {
-    effective = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  }
-  document.body.classList.toggle("theme-light", effective === "light");
-}
-function openColorModeModal() {
-  const saved = localStorage.getItem("boreas_theme") || "dark";
-  document.querySelectorAll(".colormode-option").forEach(o => o.classList.toggle("selected", o.dataset.theme === saved));
-  document.getElementById("colormode-modal-backdrop").classList.add("show");
-}
-document.getElementById("colormode-modal-backdrop").addEventListener("click", e => {
-  if (e.target.id === "colormode-modal-backdrop") document.getElementById("colormode-modal-backdrop").classList.remove("show");
-});
-document.querySelectorAll(".colormode-option").forEach(opt => {
-  opt.addEventListener("click", async () => {
-    const theme = opt.dataset.theme;
-    document.querySelectorAll(".colormode-option").forEach(o => o.classList.toggle("selected", o === opt));
-    localStorage.setItem("boreas_theme", theme);
-    applyTheme(theme);
-    document.getElementById("colormode-modal-backdrop").classList.remove("show");
-    const sessionId = localStorage.getItem("boreas_session_id");
-    if (!sessionId) return;
-    try {
-      await fetch(BACKEND_URL + "/appearance", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json", "x-session-id": sessionId },
-        body: JSON.stringify({ theme }),
-      });
-    } catch {}
-  });
-});
-(function initThemeOnLoad() {
-  applyTheme(localStorage.getItem("boreas_theme") || "dark");
-})();
 
 document.getElementById("sidebar-settings-btn").addEventListener("click", async () => {
   closeSidebar();
@@ -726,8 +688,6 @@ document.getElementById("sidebar-settings-btn").addEventListener("click", async 
       const r = await fetch(BACKEND_URL + "/appearance", { headers: { "x-session-id": sessionId } });
       if (r.ok) {
         const data = await r.json();
-        localStorage.setItem("boreas_theme", data.theme);
-        applyTheme(data.theme);
         if (data.font) applyFont(data.font);
       }
     } catch {}
