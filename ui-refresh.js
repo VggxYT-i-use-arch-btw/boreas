@@ -13,11 +13,30 @@
 
   const search = document.getElementById("sidebar-search-input");
   if (search) {
+    let searchTimer = null;
+    let searchRequest = 0;
+    window.__boreasSearchQuery = "";
+    window.__boreasSearchResults = [];
+    window.__boreasSearchPending = false;
+
     search.addEventListener("input", () => {
-      const query = search.value.trim().toLocaleLowerCase();
-      document.querySelectorAll("#sidebar-chat-list .sidebar-chat-item").forEach(item => {
-        item.hidden = !!query && !item.textContent.toLocaleLowerCase().includes(query);
-      });
+      const query = search.value.trim();
+      clearTimeout(searchTimer);
+      searchRequest += 1;
+      const requestId = searchRequest;
+      window.__boreasSearchQuery = query.length >= 2 ? query : "";
+      window.__boreasSearchResults = [];
+      window.__boreasSearchPending = query.length >= 2;
+      renderSidebar();
+      if (query.length < 2) return;
+
+      searchTimer = setTimeout(async () => {
+        const matches = await BoreasSync.chats.search(query);
+        if (requestId !== searchRequest) return;
+        window.__boreasSearchResults = matches;
+        window.__boreasSearchPending = false;
+        renderSidebar();
+      }, 220);
     });
   }
 })();

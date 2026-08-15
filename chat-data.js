@@ -319,9 +319,10 @@ async function loadChat(id, { skipRemote = false } = {}) {
 
         const raw = typeof m.content === "string" ? m.content : "";
         const display = raw.replace(/^\[Ferramentas usadas nesta resposta:[\s\S]*?\]\n\n/, "");
-        appendMessage("bot", display, null, undefined, m.attachments, m.thinking, m.steps);
+        appendMessage("bot", display, null, i, m.attachments, m.thinking, m.steps, m.activity);
       }
     }
+    if (typeof updateRegenerateAvailability === "function") updateRegenerateAvailability();
     scrollToBottom();
     if (msgInputEl) msgInputEl.placeholder = "Continue explorando o infinito...";
 
@@ -340,4 +341,3 @@ async function loadChat(id, { skipRemote = false } = {}) {
 
   renderSidebar();
 }
-

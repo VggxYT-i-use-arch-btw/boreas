@@ -192,6 +192,12 @@ const BoreasSync = (() => {
       if (res.ok) { cacheSet("chat_" + id, res.data.chat); return res.data.chat; }
       return cacheGet("chat_" + id) ?? null;
     },
+    async search(query) {
+      const q = String(query ?? "").trim();
+      if (q.length < 2) return [];
+      const res = await request("/chats/search?q=" + encodeURIComponent(q), { retries: 1, timeoutMs: 8000 });
+      return res.ok && Array.isArray(res.data.matches) ? res.data.matches : [];
+    },
     // Retries upserts and queues them on failure.
 
     async save(chat, { keepalive = false } = {}) {

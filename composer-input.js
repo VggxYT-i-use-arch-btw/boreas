@@ -492,6 +492,14 @@ msgInput.addEventListener("keydown", e => {
   // Placeholder changes after the first message.
   var placeholderChanged = false;
   var observer = new MutationObserver(function(mutations) {
+    // Clearing a chat can leave the old scrollTop behind. Keep the empty
+    // state pinned to the top so reopening/starting a chat cannot animate the
+    // header or reveal a phantom scroll range.
+    if (!messagesEl.querySelector('.msg-row')) {
+      messagesEl.scrollTop = 0;
+      autoScroll = true;
+      updateScrollBtn();
+    }
     if (placeholderChanged) return;
     for (var m of mutations) {
       for (var node of m.addedNodes) {

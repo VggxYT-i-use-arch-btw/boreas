@@ -18,11 +18,15 @@ const sidebarEl    = document.getElementById("sidebar");
 const sidebarOverlay = document.getElementById("sidebar-overlay");
 
 function openSidebar()  {
+  document.body.classList.remove("sidebar-closed");
+  document.body.classList.add("sidebar-open");
   sidebarEl.classList.add("open");
   sidebarOverlay.classList.add("open");
   renderSidebar();
 }
 function closeSidebar() {
+  document.body.classList.remove("sidebar-open");
+  if (window.matchMedia("(min-width: 1100px)").matches) document.body.classList.add("sidebar-closed");
   sidebarEl.classList.remove("open");
   sidebarOverlay.classList.remove("open");
 }
@@ -111,15 +115,22 @@ document.getElementById("coming-soon-overlay").addEventListener("click", e => {
 function renderSidebar() {
   const chats    = loadAllChats();
   const activeId = localStorage.getItem(ACTIVE_KEY);
+  const searchQuery = String(window.__boreasSearchQuery ?? "").trim();
+  const searchMatches = Array.isArray(window.__boreasSearchResults) ? window.__boreasSearchResults : [];
 
-  const sorted = Object.values(chats)
-    .filter(c => c.hasMessages || (c.updatedAt && c.updatedAt !== c.createdAt))
-    .sort((a, b) => (b.updatedAt ?? 0) > (a.updatedAt ?? 0) ? 1 : -1);
+  const sorted = searchQuery
+    ? searchMatches.map(match => ({ ...(chats[match.id] ?? {}), ...match, hasMessages: true }))
+    : Object.values(chats)
+      .filter(c => c.hasMessages || (c.updatedAt && c.updatedAt !== c.createdAt))
+      .sort((a, b) => (b.updatedAt ?? 0) > (a.updatedAt ?? 0) ? 1 : -1);
   const listEl = document.getElementById("sidebar-chat-list");
   listEl.innerHTML = "";
 
   if (!sorted.length) {
-    listEl.innerHTML = `<div class="sidebar-empty-msg">Nenhum chat ainda</div>`;
+    const emptyText = searchQuery
+      ? (window.__boreasSearchPending ? "Buscando nas mensagens…" : "Nenhum conteúdo encontrado")
+      : "Nenhum chat ainda";
+    listEl.innerHTML = `<div class="sidebar-empty-msg">${emptyText}</div>`;
     return;
   }
 
@@ -128,10 +139,12 @@ function renderSidebar() {
     item.className = "sidebar-chat-item" + (chat.id === activeId ? " active" : "");
 
     const tierLabel = TIERS[chat.tier]?.label ?? chat.tier ?? "Boreas";
+    item.dataset.chatId = chat.id;
     item.innerHTML = `
       <div class="sidebar-chat-item-text">
         <div class="sidebar-chat-title">${escHtml(chat.title)}</div>
-        <div class="sidebar-chat-meta">${escHtml(tierLabel)}</div>
+        <div class="sidebar-chat-meta">${escHtml(tierLabel)}${chat.role ? ` · ${chat.role === "user" ? "Você" : "Boreas"}` : ""}</div>
+        ${chat.snippet ? `<div class="sidebar-chat-match">${escHtml(chat.snippet)}</div>` : ""}
       </div>`;
 
     item.addEventListener("click", async () => {
@@ -197,46 +210,6 @@ document.getElementById("memory-toggle-btn").addEventListener("click", (e) => {
 
 let _memInfoClose = null;
 
-let _confirmResolve = null;
-(function initConfirmPopup() {
-  const overlay  = document.getElementById("bash-confirm-overlay");
-  const cmdEl    = document.getElementById("bash-confirm-cmd");
-  const allowBtn = document.getElementById("bash-confirm-allow");
-  const denyBtn  = document.getElementById("bash-confirm-deny");
-
-  function closeConfirm() {
-    overlay.classList.remove("show");
-    _confirmResolve = null;
-  }
-
-  allowBtn.addEventListener("click", () => {
-    if (_confirmResolve) _confirmResolve(true);
-    closeConfirm();
-  });
-  denyBtn.addEventListener("click", () => {
-    if (_confirmResolve) _confirmResolve(false);
-    closeConfirm();
-  });
-  overlay.addEventListener("click", e => {
-    if (e.target === overlay) { if (_confirmResolve) _confirmResolve(false); closeConfirm(); }
-  });
-
-  window._showBashConfirm = (confirmId, cmd) => new Promise(resolve => {
-    cmdEl.textContent = cmd;
-    _confirmResolve = async (approved) => {
-      const sessionId = localStorage.getItem("boreas_session_id") || "";
-      try {
-        await fetch(BACKEND_URL + "/confirm/" + confirmId, {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "x-session-id": sessionId },
-          body: JSON.stringify({ approved }),
-        });
-      } catch {}
-      resolve(approved);
-    };
-    overlay.classList.add("show");
-  });
-}());
 document.getElementById("memory-info-btn").addEventListener("click", e => {
   e.stopPropagation();
 
@@ -307,7 +280,29 @@ function closeSettingsSubview() {
 }
 document.getElementById("settings-back").addEventListener("click", closeSettingsSubview);
 document.getElementById("settings-close").addEventListener("click", () => {
+  closeUsageModal();
   document.getElementById("settings-overlay").classList.remove("show");
+});
+
+function openUsageModal() {
+  const overlay = document.getElementById("usage-modal-overlay");
+  const body = document.getElementById("usage-modal-body");
+  if (!overlay || !body) return;
+  overlay.classList.add("show");
+  overlay.setAttribute("aria-hidden", "false");
+  renderUsageView(body);
+}
+
+function closeUsageModal() {
+  const overlay = document.getElementById("usage-modal-overlay");
+  if (!overlay) return;
+  overlay.classList.remove("show");
+  overlay.setAttribute("aria-hidden", "true");
+}
+
+document.getElementById("usage-modal-close")?.addEventListener("click", closeUsageModal);
+document.getElementById("usage-modal-overlay")?.addEventListener("click", e => {
+  if (e.target.id === "usage-modal-overlay") closeUsageModal();
 });
 
 function renderSubview(target) {
@@ -322,7 +317,10 @@ function renderSubview(target) {
 }
 
 document.querySelectorAll(".settings-menu-item[data-target]").forEach(btn => {
-  btn.addEventListener("click", () => openSettingsSubview(btn.dataset.target));
+  btn.addEventListener("click", () => {
+    if (btn.dataset.target === "usage") openUsageModal();
+    else openSettingsSubview(btn.dataset.target);
+  });
 });
 document.querySelector('.settings-menu-item[data-action="colormode"]').addEventListener("click", openColorModeModal);
 
@@ -551,13 +549,61 @@ function renderMemoryView(body) {
   });
 }
 
-function renderConnectorsView(body) {
+async function renderConnectorsView(body) {
   body.innerHTML = `
+    <div class="settings-connectors-intro">
+      <div class="settings-connectors-intro-icon">${SETTINGS_ICONS.connectors}</div>
+      <div>
+        <div class="settings-row-label">Conectores do Boreas</div>
+        <div class="settings-row-sub">Permissões externas ficam desligadas por padrão e só são aplicadas à VM desta conta.</div>
+      </div>
+    </div>
+    <div class="settings-section-label">Sandbox</div>
+    <div class="settings-row settings-connector-card">
+      <div class="settings-connector-copy">
+        <div class="settings-row-label">Acesso web na VM</div>
+        <div class="settings-row-sub">Permite DNS, HTTP e HTTPS dentro da VM para pesquisas, downloads e instalações. Sem isso, a VM não possui rota de internet.</div>
+      </div>
+      <div class="toggle-switch" id="cap-sandboxNetwork" role="switch" aria-label="Acesso web na VM"><div class="toggle-knob"></div></div>
+    </div>
+    <div class="settings-security-note">
+      <span class="settings-security-note-icon">${SETTINGS_ICONS.privacy}</span>
+      <span>Mesmo ativado, o acesso é limitado a web e o serviço de metadata da nuvem permanece bloqueado.</span>
+    </div>
+    <div class="settings-section-label">Mais conectores</div>
     <div class="settings-connectors-empty">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v4M15 2v4M7 6h10l-1 5a5 5 0 0 1-8 0L7 6Z"/><path d="M12 15v3M9 21h6"/></svg>
       <div class="settings-connectors-empty-title">Em breve</div>
-      <div class="settings-connectors-empty-desc">Conectores ainda estão sendo desenvolvidos. Isso vai permitir que o Boreas se conecte a outras ferramentas e serviços.</div>
+      <div class="settings-connectors-empty-desc">Integrações com outras ferramentas e serviços serão adicionadas aqui.</div>
     </div>`;
+
+  const toggle = document.getElementById("cap-sandboxNetwork");
+  const sessionId = localStorage.getItem("boreas_session_id");
+  let current = { sandboxNetwork: false };
+  if (sessionId) {
+    try {
+      const r = await fetch(BACKEND_URL + "/capabilities", { headers: { "x-session-id": sessionId } });
+      if (r.ok) current = (await r.json()).capabilities ?? current;
+    } catch {}
+  }
+  toggle.classList.toggle("on", current.sandboxNetwork === true);
+  toggle.setAttribute("aria-checked", String(current.sandboxNetwork === true));
+  toggle.addEventListener("click", async () => {
+    const next = !toggle.classList.contains("on");
+    toggle.classList.toggle("on", next);
+    toggle.setAttribute("aria-checked", String(next));
+    if (!sessionId) return;
+    try {
+      const r = await fetch(BACKEND_URL + "/capabilities", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-session-id": sessionId },
+        body: JSON.stringify({ sandboxNetwork: next }),
+      });
+      if (!r.ok) throw new Error("capability update failed");
+    } catch {
+      toggle.classList.toggle("on", !next);
+      toggle.setAttribute("aria-checked", String(!next));
+    }
+  });
 }
 
 function renderPrivacyView(body) {
@@ -670,6 +716,7 @@ document.querySelectorAll(".colormode-option").forEach(opt => {
 document.getElementById("sidebar-settings-btn").addEventListener("click", async () => {
   closeSidebar();
   updateSidebarUser();
+  closeUsageModal();
   closeSettingsSubview();
   document.getElementById("settings-overlay").classList.add("show");
 
@@ -702,11 +749,27 @@ function renderUsage(period) {
   if (!_usageData) { el.innerHTML = '<div class="usage-loading">Sem dados ainda.</div>'; return; }
   const d = _usageData[period];
   if (!d) { el.innerHTML = '<div class="usage-loading">—</div>'; return; }
+  const promptTokens = Number(d.prompt_tokens ?? 0);
+  const completionTokens = Number(d.completion_tokens ?? 0);
+  const totalTokens = Math.max(0, Number(d.total_tokens ?? promptTokens + completionTokens));
+  const promptWidth = totalTokens ? Math.round((promptTokens / totalTokens) * 100) : 0;
+  const completionWidth = totalTokens ? Math.max(0, 100 - promptWidth) : 0;
   el.innerHTML = `
+    <div class="usage-visual-card">
+      <div class="usage-visual-head"><span>Atividade no período</span><strong>${fmtNum(totalTokens)} tokens</strong></div>
+      <div class="usage-visual-bar" aria-label="${promptWidth}% entrada e ${completionWidth}% saída">
+        <span class="usage-visual-prompt" style="width:${promptWidth}%"></span>
+        <span class="usage-visual-completion" style="width:${completionWidth}%"></span>
+      </div>
+      <div class="usage-visual-legend">
+        <span><i class="usage-dot prompt"></i>Entrada ${fmtNum(promptTokens)}</span>
+        <span><i class="usage-dot completion"></i>Saída ${fmtNum(completionTokens)}</span>
+      </div>
+    </div>
     <div class="usage-cards">
       <div class="usage-card">
         <div class="usage-card-label">TOTAL</div>
-        <div class="usage-card-value">${fmtNum(d.total_tokens)}</div>
+        <div class="usage-card-value">${fmtNum(totalTokens)}</div>
         <div class="usage-card-sub">tokens</div>
       </div>
       <div class="usage-card">
@@ -716,12 +779,12 @@ function renderUsage(period) {
       </div>
       <div class="usage-card">
         <div class="usage-card-label">ENTRADA</div>
-        <div class="usage-card-value">${fmtNum(d.prompt_tokens)}</div>
+        <div class="usage-card-value">${fmtNum(promptTokens)}</div>
         <div class="usage-card-sub">prompt tokens</div>
       </div>
       <div class="usage-card">
         <div class="usage-card-label">SAÍDA</div>
-        <div class="usage-card-value">${fmtNum(d.completion_tokens)}</div>
+        <div class="usage-card-value">${fmtNum(completionTokens)}</div>
         <div class="usage-card-sub">completion tokens</div>
       </div>
     </div>`;
@@ -914,4 +977,3 @@ document.getElementById("resume-overlay").addEventListener("click", e => {
     document.getElementById("resume-overlay").classList.remove("show");
   }
 });
-

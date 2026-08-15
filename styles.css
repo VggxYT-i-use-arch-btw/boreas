@@ -640,17 +640,6 @@ body.theme-light .settings-menu-item-sub{color:var(--text-faint)}
 #sheet-backdrop{display:none;position:fixed;inset:0;z-index:19;background:rgba(0,0,0,.4)}
 #sheet-backdrop.open{display:block}
 
-/* Bash confirmation */
-.bash-confirm-overlay{position:fixed;inset:0;z-index:400;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s;backdrop-filter:blur(4px)}
-.bash-confirm-overlay.show{opacity:1;pointer-events:auto}
-.bash-confirm-card{background:var(--bg-elev);border:1px solid var(--border);border-radius:20px;padding:24px;max-width:320px;width:90%;max-height:80vh;overflow-y:auto;display:flex;flex-direction:column}
-.bash-confirm-title{font-size:15px;font-weight:700;color:var(--text);margin-bottom:6px}
-.bash-confirm-desc{font-size:12px;color:var(--text-faint);margin-bottom:12px;line-height:1.5}
-.bash-confirm-cmd{background:var(--bg-elev);border:1px solid var(--border);border-radius:10px;padding:10px 12px;font-size:12px;font-family:monospace;color:var(--text-dim);margin-bottom:16px;overflow-x:auto;overflow-y:auto;max-height:35vh;white-space:pre-wrap;word-break:break-all}
-.bash-confirm-btns{display:flex;gap:8px;flex-shrink:0}
-.bash-confirm-allow{flex:1;padding:10px;border-radius:10px;background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);color:var(--accent-text);font-size:12px;font-weight:600;cursor:pointer;transition:background .15s}
-.bash-confirm-allow:hover{background:rgba(99,102,241,.25)}
-.bash-confirm-deny{flex:1;padding:10px;border-radius:10px;border:1px solid var(--border);background:transparent;color:var(--text-faint);font-size:12px;font-weight:600;cursor:pointer}
 
 /* Resume banner */
 #resume-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;margin:8px 0;background:var(--surface);border:1px solid var(--border);border-radius:12px;font-size:12px;color:var(--text-dim)}
@@ -665,4 +654,3 @@ body.theme-light .settings-menu-item-sub{color:var(--text-faint)}
 @keyframes blink{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
 .msg-row{animation:fadeIn .3s ease both}
 .katex{font-size:1em}
-

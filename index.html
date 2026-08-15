@@ -255,7 +255,7 @@
     <input type="file" id="any-file-input">
     <textarea id="msg-input" rows="1" placeholder="Explore infinitas possibilidades..."></textarea>
     <button id="send-btn" disabled>
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="var(--bg)"><path d="M3 11.5L21 3l-6.5 18-3.5-7.5L3 11.5z"/></svg>
+      <img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/send_msg.png" alt="Enviar mensagem" draggable="false">
     </button>
   </div>
 </div>
@@ -389,6 +389,19 @@
   </div>
 </div>
 
+<div id="usage-modal-overlay" aria-hidden="true">
+  <section id="usage-modal" role="dialog" aria-modal="true" aria-labelledby="usage-modal-title">
+    <div class="usage-modal-header">
+      <div>
+        <span class="usage-modal-kicker">Conta</span>
+        <h2 id="usage-modal-title">Uso</h2>
+      </div>
+      <button id="usage-modal-close" type="button" aria-label="Fechar uso">✕</button>
+    </div>
+    <div id="usage-modal-body"></div>
+  </section>
+</div>
+
 <!-- Modo de cor: small overlay modal, blurs everything else -->
 <div id="colormode-modal-backdrop">
   <div class="colormode-modal">
@@ -494,18 +507,6 @@
     <span class="asheet-row-chevron"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
   </div>
   <div id="asheet-plugins-list"></div>
-</div>
-
-<div class="bash-confirm-overlay" id="bash-confirm-overlay">
-  <div class="bash-confirm-card">
-    <div class="bash-confirm-title">⚠️ Autorização necessária</div>
-    <div class="bash-confirm-desc">O modelo quer executar um comando que requer sua permissão:</div>
-    <pre class="bash-confirm-cmd" id="bash-confirm-cmd"></pre>
-    <div class="bash-confirm-btns">
-      <button class="bash-confirm-allow" id="bash-confirm-allow">Autorizar</button>
-      <button class="bash-confirm-deny" id="bash-confirm-deny">Cancelar</button>
-    </div>
-  </div>
 </div>
 
   <!-- Front-end modularizado: a ordem preserva as dependências globais existentes. -->
