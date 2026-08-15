@@ -325,6 +325,8 @@ function _stripOpenFenceForLiveCode(text) {
 }
 
 function createStreamingMarkdownRenderer(el) {
+  // Live renderer: prioritize latency and incremental DOM work. The response
+  // is append-only, so never re-parse text that has already been painted.
   const state = {
     el,
     source: '',
@@ -332,13 +334,20 @@ function createStreamingMarkdownRenderer(el) {
     activeNodes: [],
     queued: false,
     raf: 0,
+    lastPaint: 0,
     fence: null,
+    scanPos: 0,
+    stableEnd: 0,
     finished: false,
+    plainNode: null,
+    plainStart: 0,
+    plainRenderedLength: 0,
   };
 
   const clearActive = () => {
     for (const node of state.activeNodes) node.remove();
     state.activeNodes = [];
+    state.plainNode = null;
   };
 
   const appendNodes = (nodes, queueMath = true) => {
@@ -348,47 +357,83 @@ function createStreamingMarkdownRenderer(el) {
     }
   };
 
-  // Process only the newly arrived suffix. The fence state is carried between
-  // frames, so we never rescan the complete response just to find stable blocks.
-  const commitStable = () => {
-    let pos = state.stableSource.length;
-    let lastStable = pos;
-    const suffix = state.source.slice(pos);
-    const lines = suffix.split('\n');
-    for (let i = 0, offset = pos; i < lines.length; i++) {
-      const line = lines[i];
-      const m = line.match(/^\s*(```+|~~~+)/);
-      let closedFence = false;
-      if (m) {
-        const marker = m[1][0];
-        if (!state.fence) state.fence = marker;
-        else if (state.fence === marker) { state.fence = null; closedFence = true; }
-      }
-      const end = offset + line.length;
-      if ((!state.fence && line.trim() === '') || closedFence) lastStable = Math.min(end + 1, state.source.length);
-      offset = end + 1;
-    }
-    if (lastStable <= state.stableSource.length) return;
+  // Find the last complete Markdown block without rescanning the prefix.
+  // A block becomes immutable after a blank line outside a fenced code block.
+  const scanForStableBoundary = () => {
+    let i = state.scanPos;
+    let lineStart = i;
+    let boundary = state.stableEnd;
+    let fence = state.fence;
+    const src = state.source;
 
-    // Everything through the last blank line is immutable enough to render
-    // once. The active tail stays outside this path.
-    const newlyStable = state.source.slice(state.stableSource.length, lastStable);
-    clearActive();
-    appendNodes(_parseMarkdownFragment(newlyStable));
-    state.stableSource = state.source.slice(0, lastStable);
+    while (i < src.length) {
+      const nl = src.indexOf('\n', i);
+      if (nl < 0) break;
+      const line = src.slice(lineStart, nl);
+      const fenceMatch = line.match(/^\s*(```+|~~~+)/);
+      if (fenceMatch) {
+        const marker = fenceMatch[1][0];
+        if (!fence) fence = marker;
+        else if (fence === marker) fence = null;
+      }
+      if (!fence && line.trim() === '') boundary = nl + 1;
+      i = nl + 1;
+      lineStart = i;
+    }
+
+    state.scanPos = lineStart;
+    state.fence = fence;
+    state.stableEnd = boundary;
   };
 
-  const paint = () => {
+  const commitStable = () => {
+    scanForStableBoundary();
+    if (state.stableEnd <= state.stableSource.length) return;
+
+    const newlyStable = state.source.slice(state.stableSource.length, state.stableEnd);
+    // The active tail is replaced, but committed nodes are never touched.
+    clearActive();
+    appendNodes(_parseMarkdownFragment(newlyStable));
+    state.stableSource = state.source.slice(0, state.stableEnd);
+    state.plainStart = state.stableEnd;
+    state.plainRenderedLength = 0;
+  };
+
+  const paint = (force = false) => {
     state.queued = false;
     state.raf = 0;
+    state.lastPaint = performance.now();
+
     commitStable();
 
     const tail = state.source.slice(state.stableSource.length);
-    clearActive();
     if (!tail) return;
 
-    // While a fenced code block is still open, update only a lightweight
-    // <pre><code> text node. Highlight.js runs once when the fence closes.
+    // Fast path for ordinary prose. Append only the newly received suffix to
+    // one Text node: no Markdown parser, sanitizer, DOM replacement or layout
+    // churn for every token.
+    if (!_looksLikeMarkdown(tail) && !state.fence) {
+      if (!state.plainNode || state.plainStart > state.source.length) {
+        clearActive();
+        state.plainNode = document.createTextNode('');
+        state.el.appendChild(state.plainNode);
+        state.activeNodes = [state.plainNode];
+        state.plainStart = state.stableSource.length;
+        state.plainRenderedLength = 0;
+      }
+      const wanted = state.source.slice(state.plainStart);
+      const delta = wanted.slice(state.plainRenderedLength);
+      if (delta) {
+        state.plainNode.appendData(delta);
+        state.plainRenderedLength = wanted.length;
+      }
+      return;
+    }
+
+    // If Markdown syntax is active, only the current unfinished tail is
+    // parsed. Previously committed blocks remain untouched.
+    clearActive();
+
     const liveCode = _stripOpenFenceForLiveCode(tail);
     if (liveCode && !liveCode.closed) {
       const pre = document.createElement('pre');
@@ -403,39 +448,65 @@ function createStreamingMarkdownRenderer(el) {
       return;
     }
 
-    if (!_looksLikeMarkdown(tail)) {
-      const textNode = document.createTextNode(tail);
-      state.el.appendChild(textNode);
-      state.activeNodes = [textNode];
-      return;
-    }
-
     const nodes = _parseMarkdownFragment(tail);
     appendNodes(nodes);
     state.activeNodes = nodes;
+  };
+
+  const schedule = () => {
+    if (state.finished || state.queued) return;
+    state.queued = true;
+    const now = performance.now();
+    const elapsed = now - state.lastPaint;
+    // Never intentionally hold a visible token batch for a long time.  A
+    // frame is the normal path; the 45 ms ceiling protects streaming latency
+    // even when frames are busy.
+    if (elapsed >= 45) {
+      // If the browser has been busy for a while, do not add another frame of
+      // latency: paint this small batch now.
+      paint();
+    } else {
+      state.raf = requestAnimationFrame(() => paint());
+    }
   };
 
   state.update = text => {
-    state.source = text;
-    if (!state.queued) {
-      state.queued = true;
-      state.raf = requestAnimationFrame(paint);
+    if (state.finished) return;
+    if (typeof text !== 'string') text = String(text ?? '');
+    if (text === state.source) return;
+    // The stream is append-only. If a caller supplies a shorter string, keep
+    // correctness by resetting only the active tail, never the whole history.
+    if (text.length < state.source.length || !text.startsWith(state.source)) {
+      state.source = text;
+      state.stableSource = '';
+      state.scanPos = 0;
+      state.stableEnd = 0;
+      state.fence = null;
+      clearActive();
+      state.el.textContent = '';
+      state.plainStart = 0;
+      state.plainRenderedLength = 0;
+    } else {
+      state.source = text;
     }
+    schedule();
   };
 
   state.finish = () => {
+    if (state.finished) return;
+    state.finished = true;
     if (state.raf) cancelAnimationFrame(state.raf);
     state.raf = 0;
     state.queued = false;
-    state.finished = true;
-    clearActive();
 
-    // Parse only the still-active tail once. No complete-message re-render.
+    // Paint the latest tail immediately, but only that tail. This is a flush,
+    // not a complete-message render.
+    commitStable();
+    clearActive();
     const tail = state.source.slice(state.stableSource.length);
-    if (!tail) return;
-    const nodes = _parseMarkdownFragment(tail);
-    appendNodes(nodes);
-    state.activeNodes = nodes;
+    if (tail) {
+      appendNodes(_parseMarkdownFragment(tail));
+    }
   };
 
   return state;
