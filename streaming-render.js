@@ -86,12 +86,13 @@ async function syncGeneration(genId) {
           reply += delta.content;
           segmentReply += delta.content;
           if (!responseBubble) { responseBubble = document.createElement("div"); responseBubble.className = "bubble bot"; masterCol.appendChild(responseBubble); }
-          renderMarkdown(responseBubble, segmentReply);
+          renderStreamingMarkdown(responseBubble, segmentReply);
           scrollToBottom();
         }
       }
     }
 
+    finishStreamingMarkdown(responseBubble);
     clearPendingGen();
     if (reply || msgAttachments.length) {
       messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
@@ -253,18 +254,45 @@ if (typeof marked !== 'undefined') {
   });
 }
 
+function _sanitizeMarkdownHtml(rawHtml) {
+  if (typeof DOMPurify !== 'undefined') {
+    return DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] });
+  }
+  return rawHtml;
+}
+
+function _renderMarkdownBlockHtml(text) {
+  if (typeof marked !== 'undefined') {
+    return _sanitizeMarkdownHtml(marked.parse(text));
+  }
+  return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+// Static/history renderer. This is intentionally separate from the live
+// renderer below: history can afford one complete parse because it happens
+// once per message, not once per token.
 function renderMarkdown(el, text) {
   try {
-    if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
-      const rawHtml = marked.parse(text);
-      el.innerHTML = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] });
-    } else {
+    el.innerHTML = _renderMarkdownBlockHtml(text);
+    _queueMathRender(el);
+  } catch(e) {
+    el.textContent = text;
+  }
+}
 
-      el.innerHTML = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-      return;
-    }
-    if (typeof renderMathInElement !== 'undefined') {
-      renderMathInElement(el, {
+function _parseMarkdownFragment(text) {
+  const holder = document.createElement('div');
+  holder.innerHTML = _renderMarkdownBlockHtml(text);
+  const nodes = Array.from(holder.childNodes);
+  return nodes;
+}
+
+function _queueMathRenderNode(node) {
+  if (typeof renderMathInElement === 'undefined' || !node?.isConnected) return;
+  const run = () => {
+    if (!node.isConnected || !node.textContent?.match(/\$|\\\(|\\\[/)) return;
+    try {
+      renderMathInElement(node, {
         delimiters: [
           {left:"$$",right:"$$",display:true},
           {left:"$",right:"$",display:false},
@@ -273,11 +301,153 @@ function renderMarkdown(el, text) {
         ],
         throwOnError: false
       });
-    }
-  } catch(e) {
+    } catch {}
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run, { timeout: 180 });
+  else setTimeout(run, 32);
+}
 
-    el.textContent = text;
+function _looksLikeMarkdown(text) {
+  return /(^|\n)\s{0,3}(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|```|~~~)|[*_`\[\]\\$]/.test(text);
+}
+
+function _stripOpenFenceForLiveCode(text) {
+  const first = text.match(/^\s*(```+|~~~+)\s*([^\n]*)\n?/);
+  if (!first) return null;
+  const marker = first[1][0];
+  const lines = text.split('\n');
+  let closing = -1;
+  for (let i = 1; i < lines.length; i++) {
+    if (new RegExp(`^\\s*${marker}{3,}\\s*$`).test(lines[i])) { closing = i; break; }
   }
+  const codeLines = closing >= 0 ? lines.slice(1, closing) : lines.slice(1);
+  return { language: first[2].trim(), code: codeLines.join('\n'), closed: closing >= 0 };
+}
+
+function createStreamingMarkdownRenderer(el) {
+  const state = {
+    el,
+    source: '',
+    stableSource: '',
+    activeNodes: [],
+    queued: false,
+    raf: 0,
+    fence: null,
+    finished: false,
+  };
+
+  const clearActive = () => {
+    for (const node of state.activeNodes) node.remove();
+    state.activeNodes = [];
+  };
+
+  const appendNodes = (nodes, queueMath = true) => {
+    for (const node of nodes) {
+      state.el.appendChild(node);
+      if (queueMath && node.nodeType === 1) _queueMathRenderNode(node);
+    }
+  };
+
+  // Process only the newly arrived suffix. The fence state is carried between
+  // frames, so we never rescan the complete response just to find stable blocks.
+  const commitStable = () => {
+    let pos = state.stableSource.length;
+    let lastStable = pos;
+    const suffix = state.source.slice(pos);
+    const lines = suffix.split('\n');
+    for (let i = 0, offset = pos; i < lines.length; i++) {
+      const line = lines[i];
+      const m = line.match(/^\s*(```+|~~~+)/);
+      let closedFence = false;
+      if (m) {
+        const marker = m[1][0];
+        if (!state.fence) state.fence = marker;
+        else if (state.fence === marker) { state.fence = null; closedFence = true; }
+      }
+      const end = offset + line.length;
+      if ((!state.fence && line.trim() === '') || closedFence) lastStable = Math.min(end + 1, state.source.length);
+      offset = end + 1;
+    }
+    if (lastStable <= state.stableSource.length) return;
+
+    // Everything through the last blank line is immutable enough to render
+    // once. The active tail stays outside this path.
+    const newlyStable = state.source.slice(state.stableSource.length, lastStable);
+    clearActive();
+    appendNodes(_parseMarkdownFragment(newlyStable));
+    state.stableSource = state.source.slice(0, lastStable);
+  };
+
+  const paint = () => {
+    state.queued = false;
+    state.raf = 0;
+    commitStable();
+
+    const tail = state.source.slice(state.stableSource.length);
+    clearActive();
+    if (!tail) return;
+
+    // While a fenced code block is still open, update only a lightweight
+    // <pre><code> text node. Highlight.js runs once when the fence closes.
+    const liveCode = _stripOpenFenceForLiveCode(tail);
+    if (liveCode && !liveCode.closed) {
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      const lang = liveCode.language && typeof hljs !== 'undefined' && hljs.getLanguage(liveCode.language)
+        ? liveCode.language : 'plaintext';
+      code.className = `hljs language-${lang}`;
+      code.textContent = liveCode.code;
+      pre.appendChild(code);
+      state.el.appendChild(pre);
+      state.activeNodes = [pre];
+      return;
+    }
+
+    if (!_looksLikeMarkdown(tail)) {
+      const textNode = document.createTextNode(tail);
+      state.el.appendChild(textNode);
+      state.activeNodes = [textNode];
+      return;
+    }
+
+    const nodes = _parseMarkdownFragment(tail);
+    appendNodes(nodes);
+    state.activeNodes = nodes;
+  };
+
+  state.update = text => {
+    state.source = text;
+    if (!state.queued) {
+      state.queued = true;
+      state.raf = requestAnimationFrame(paint);
+    }
+  };
+
+  state.finish = () => {
+    if (state.raf) cancelAnimationFrame(state.raf);
+    state.raf = 0;
+    state.queued = false;
+    state.finished = true;
+    clearActive();
+
+    // Parse only the still-active tail once. No complete-message re-render.
+    const tail = state.source.slice(state.stableSource.length);
+    if (!tail) return;
+    const nodes = _parseMarkdownFragment(tail);
+    appendNodes(nodes);
+    state.activeNodes = nodes;
+  };
+
+  return state;
+}
+
+function renderStreamingMarkdown(el, text) {
+  if (!el._streamRenderer) el._streamRenderer = createStreamingMarkdownRenderer(el);
+  el._streamRenderer.update(text);
+}
+
+function finishStreamingMarkdown(el) {
+  el?._streamRenderer?.finish();
 }
 
 // Cópia estática do TOOL_META (as outras instâncias são locais às funções de
@@ -1447,7 +1617,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
               if (botBubble?.isConnected) botBubble.remove();
               responseBubble = document.createElement("div"); responseBubble.className = "bubble bot"; col.appendChild(responseBubble);
             }
-            reply += cd; currentBubbleText += cd; renderMarkdown(responseBubble, currentBubbleText);
+            reply += cd; currentBubbleText += cd; renderStreamingMarkdown(responseBubble, currentBubbleText);
             responseBubble._rawText = currentBubbleText;
             scrollToBottom(); await new Promise(r => setTimeout(r, 0));
           }
@@ -1841,7 +2011,7 @@ async function send() {
               if (pendingSources?.length) actions.appendChild(createSourcesButton(pendingSources));
               masterCol.appendChild(actions);
             }
-            reply += contentDelta; currentBubbleText += contentDelta; renderMarkdown(responseBubble, currentBubbleText);
+            reply += contentDelta; currentBubbleText += contentDelta; renderStreamingMarkdown(responseBubble, currentBubbleText);
             responseBubble._rawText = currentBubbleText;
             scrollToBottom();
             await new Promise(r => setTimeout(r, 0));
@@ -1856,18 +2026,19 @@ async function send() {
         try {
           const chunk2 = JSON.parse(raw2);
           const cd2 = chunk2.choices?.[0]?.delta?.content ?? "";
-          if (cd2) { reply += cd2; if (responseBubble) renderMarkdown(responseBubble, reply); }
+          if (cd2) { reply += cd2; if (responseBubble) renderStreamingMarkdown(responseBubble, reply); }
         } catch {}
       }
     }
     finalizeThinkingSegment(activity);
+    finishStreamingMarkdown(responseBubble);
 
     removeTyping();
 
     if (!responseBubble && reply) {
       ensureMasterRow();
       responseBubble = document.createElement("div"); responseBubble.className = "bubble bot";
-      renderMarkdown(responseBubble, reply);
+      renderStreamingMarkdown(responseBubble, reply);
       masterCol.appendChild(responseBubble);
       const actions2 = document.createElement("div"); actions2.className = "msg-actions";
       const copyBtn2 = document.createElement("button"); copyBtn2.className = "msg-action-btn";
@@ -2195,7 +2366,7 @@ async function resumePending(pluginOverride) {
               if (pendingSourcesR?.length) actions.appendChild(createSourcesButton(pendingSourcesR));
               masterCol.appendChild(actions);
             }
-            reply += cd; renderMarkdown(responseBubble, reply);
+            reply += cd; renderStreamingMarkdown(responseBubble, reply);
             scrollToBottom();
             await new Promise(r => setTimeout(r, 0));
           }
@@ -2204,6 +2375,7 @@ async function resumePending(pluginOverride) {
     }
 
     finalizeThinkingSegment(activity);
+    finishStreamingMarkdown(responseBubble);
     removeTyping();
     if (!responseBubble && !reply && !reasoning) appendMessage("bot", "Sem resposta.");
     messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
