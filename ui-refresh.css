@@ -251,10 +251,17 @@ button:active { transform: scale(.97); }
 .dr-card, .aup-card { border-color: var(--border-soft); background: var(--surface); }
 
 @media (min-width: 1100px) {
-  #chat-screen { margin-left: 312px; width: calc(100% - 312px); }
-  #sidebar { transform: translateX(0) !important; }
+  /* #chat-screen, #sidebar (transform) e .sidebar-close-btn (display) foram
+     removidos daqui: esse bloco duplicava o @media (min-width: 1100px) mais
+     abaixo (linha ~394), só que com valores fixos e um !important no
+     #sidebar. !important sempre ganha de especificidade normal, então o
+     "body.sidebar-closed #sidebar { transform: translateX(-100%) }" do
+     bloco de baixo NUNCA conseguia esconder a sidebar - era isso que fazia
+     o botão de fechar (X) não funcionar em telas >=1100px, e o layout
+     bugar (o #chat-screen expandia pra largura cheia via
+     "body.sidebar-closed #chat-screen", mas a sidebar continuava visível
+     por cima/atrás, presa aberta). */
   #sidebar-overlay { display: none; }
-  .sidebar-close-btn { display: none; }
   .settings-views { max-height: calc(100vh - 48px); }
 }
 

@@ -326,7 +326,13 @@ function renderMarkdownNow(el, text) {
   try {
     if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
       const rawHtml = marked.parse(text);
-      el.innerHTML = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] });
+      // marked sempre devolve um "\n" sobrando no final do HTML. Isso vira um
+      // nó de texto solto depois da última tag, e como .bubble.user usa
+      // white-space:pre-wrap, esse \n é renderizado como uma linha em branco
+      // de verdade no final de TODA mensagem - por isso a bolha sempre
+      // parecia maior/mais alta do que o texto digitado precisava
+      // (confirmado: b.textContent vinha com "\n" no final no console).
+      el.innerHTML = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] }).trim();
     } else {
 
       el.innerHTML = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
@@ -733,7 +739,7 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
     copyBtn.addEventListener("click", () => copyText(bubble._rawText ?? "", copyBtn));
     const regenBtn = document.createElement("button");
     regenBtn.className = "msg-action-btn msg-regenerate-btn";
-    regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 -4 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
+    regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
     regenBtn.addEventListener("click", () => regenerate(row, bubble, actions));
     actions.appendChild(copyBtn); actions.appendChild(regenBtn);
     col.appendChild(actions); row.appendChild(col);
@@ -800,7 +806,7 @@ function showUserCtxMenu(x, y, userRow, text, images) {
 
   const retryItem = canRetryFromUserRow(userRow) ? `
     <div class="user-ctx-item" id="uctx-retry">
-      <svg width="13" height="13" viewBox="0 -4 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg>
       Tentar novamente
     </div>` : "";
   menu.innerHTML = `${retryItem}
@@ -1619,7 +1625,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
       copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copiar`;
       copyBtn.addEventListener("click", () => copyText(responseBubble._rawText ?? "", copyBtn));
       const regenBtn = document.createElement("button"); regenBtn.className = "msg-action-btn msg-regenerate-btn";
-      regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 -4 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
+      regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
       regenBtn.addEventListener("click", () => regenerate(botRow, responseBubble, actions));
       actions.appendChild(copyBtn); actions.appendChild(regenBtn); col.appendChild(actions);
     }
@@ -1992,7 +1998,7 @@ async function send() {
               // Usa _rawText para copiar o texto real da bolha sem ler o DOM completo.
               copyBtn.addEventListener("click", () => copyText(thisBubble._rawText ?? "", copyBtn));
               const regenBtn = document.createElement("button"); regenBtn.className = "msg-action-btn msg-regenerate-btn";
-              regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 -4 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
+              regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
               regenBtn.addEventListener("click", () => regenerate(masterRow, thisBubble, actions));
               actions.appendChild(copyBtn); actions.appendChild(regenBtn);
 
@@ -2037,7 +2043,7 @@ async function send() {
       copyBtn2.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copiar`;
       copyBtn2.addEventListener("click", () => copyText(reply, copyBtn2));
       const regenBtn2 = document.createElement("button"); regenBtn2.className = "msg-action-btn msg-regenerate-btn";
-      regenBtn2.innerHTML = `<svg width="11" height="11" viewBox="0 -4 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
+      regenBtn2.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
       regenBtn2.addEventListener("click", () => regenerate(masterRow, responseBubble, actions2));
       actions2.appendChild(copyBtn2); actions2.appendChild(regenBtn2); masterCol.appendChild(actions2);
     } else if (!responseBubble && !reply) {
@@ -2354,7 +2360,7 @@ async function resumePending(pluginOverride) {
               // Usa _rawText para copiar o texto real da bolha sem ler o DOM completo.
               copyBtn.addEventListener("click", () => copyText(responseBubble._rawText ?? "", copyBtn));
               const regenBtn = document.createElement("button"); regenBtn.className = "msg-action-btn msg-regenerate-btn";
-              regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 -4 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
+              regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
               regenBtn.addEventListener("click", () => regenerate(masterRow, responseBubble, actions));
               actions.appendChild(copyBtn); actions.appendChild(regenBtn);
               if (pendingSourcesR?.length) actions.appendChild(createSourcesButton(pendingSourcesR));
