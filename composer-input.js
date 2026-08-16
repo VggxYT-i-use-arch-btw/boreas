@@ -148,28 +148,17 @@ const scrollBottomBtn = document.getElementById("scroll-bottom-btn");
 let autoScroll = true;
 let _scrollFrame = 0;
 function updateScrollBtn() {
-  scrollBottomBtn.classList.toggle("show", !autoScroll);
+  const hasScrollableMessages = messagesEl.querySelector(".msg-row")
+    && messagesEl.scrollHeight > messagesEl.clientHeight + 4;
+  const distance = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
+  const awayFromLatest = hasScrollableMessages && distance > 80;
+  scrollBottomBtn.classList.toggle("show", awayFromLatest);
 }
 messagesEl.addEventListener("scroll", () => {
-
   const dist = messagesEl.scrollHeight - messagesEl.scrollTop - messagesEl.clientHeight;
-  if (dist < 4) autoScroll = true;
-  else if (dist > 80) autoScroll = false;
+  autoScroll = dist < 4;
   updateScrollBtn();
 });
-messagesEl.addEventListener("wheel", e => {
-  if (e.deltaY < 0) { autoScroll = false; updateScrollBtn(); }
-}, { passive: true });
-let _touchStartY = null;
-messagesEl.addEventListener("touchstart", e => {
-  _touchStartY = e.touches[0]?.clientY ?? null;
-}, { passive: true });
-messagesEl.addEventListener("touchmove", e => {
-  if (_touchStartY == null) return;
-  const dy = (e.touches[0]?.clientY ?? _touchStartY) - _touchStartY;
-  if (dy > 4) { autoScroll = false; updateScrollBtn(); } // arrastou pra baixo = subiu na conversa
-}, { passive: true });
-messagesEl.addEventListener("touchend", () => { _touchStartY = null; }, { passive: true });
 scrollBottomBtn.addEventListener("click", () => scrollToBottom(true));
 
 function scrollToBottom(force) {

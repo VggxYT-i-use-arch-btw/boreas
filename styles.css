@@ -164,7 +164,7 @@ img{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 
 /* Message actions */
 .msg-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;align-items:center;opacity:1;transition:opacity .2s ease}
-.msg-action-btn{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50%;background:transparent;border:none;color:var(--text);font-size:0;cursor:pointer;transition:all .15s;flex-shrink:0}
+.msg-action-btn{display:flex;align-items:center;justify-content:center;width:32px;height:32px;padding:0;border-radius:50%;background:transparent;border:none;color:var(--text);font-size:0;line-height:0;cursor:pointer;transition:all .15s;flex-shrink:0}
 .msg-action-btn:hover{background:var(--surface)}.msg-action-btn svg{width:17px;height:17px;flex-shrink:0;display:block}
 .msg-action-btn.copied{color:rgba(134,239,172,.85)}
 
@@ -372,11 +372,11 @@ img{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .aup-recap-row .aup-question-text{margin-bottom:6px;font-size:13.5px}
 .aup-recap-answer{font-size:13px;color:var(--accent-text);font-weight:700}
 
-.msg-mention-badge{display:inline-flex;align-items:center;gap:5px;font-weight:600;color:var(--accent-text)}
-.msg-mention-badge svg{width:13px;height:13px}
+.msg-mention-badge{display:inline-flex;align-items:center;gap:5px;margin-right:4px;padding:2px 7px 2px 5px;border:1px solid rgba(167,139,250,.3);border-radius:999px;background:rgba(139,92,246,.13);font-weight:600;line-height:1.1;color:var(--accent-text);vertical-align:middle;white-space:nowrap}
+.msg-mention-badge svg{display:block;width:13px;height:13px;flex:0 0 13px}
 #file-input,#any-file-input,#camera-input{display:none}
 #attach-btn{width:36px;height:36px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--text);transition:color .15s}
-#attach-btn svg{transform:translate(-1px,-2px)}
+#attach-btn svg{display:block}
 #attach-btn:hover{color:var(--text)}
 #attach-btn:active{transform:scale(.9)}
 

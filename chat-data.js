@@ -289,6 +289,8 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
   sendBtn.disabled = false;
 
   messagesEl.innerHTML = "";
+  autoScroll = true;
+  updateScrollBtn();
   pendingImages = [];
   pendingFile = null;
   document.getElementById("image-preview-wrap")?.classList.remove("show");

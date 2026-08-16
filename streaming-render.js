@@ -60,9 +60,18 @@ async function syncGenerationOnce(genId) {
   loading = true; showStopBtn();
   currentGenId = genId;
 
+  // A conexão pode cair depois de a resposta parcial já estar na tela. O
+  // endpoint de sync reenvia todos os chunks desde o começo; removemos apenas
+  // a linha marcada para esta geração antes de reconstruí-la, evitando uma
+  // segunda resposta visual com o mesmo conteúdo.
+  [...messagesEl.querySelectorAll(".msg-row.bot")]
+    .filter(row => row.dataset.generationId === String(genId))
+    .forEach(row => row.remove());
+
   let masterRow = null, masterCol = null, responseBubble = null;
   let reply = "", segmentReply = "";
   let msgAttachments = [];
+  const previousAssistant = messages.at(-1)?.role === "assistant" ? messages.at(-1) : null;
   const activity = {};
   let sawDone = false;
   let syncMissing = false;
@@ -70,6 +79,7 @@ async function syncGenerationOnce(genId) {
     if (!masterRow) {
       removeTyping();
       masterRow = document.createElement("div"); masterRow.className = "msg-row bot";
+      masterRow.dataset.generationId = String(genId);
       const avatar = document.createElement("div"); avatar.className = "avatar";
       avatar.innerHTML = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" loading="lazy" decoding="async" draggable="false">`;
       masterCol = document.createElement("div"); masterCol.className = "bot-col"; masterCol.style.gap = "4px";
@@ -134,7 +144,14 @@ async function syncGenerationOnce(genId) {
     finalizeThinkingSegment(activity);
     if (sawDone || syncMissing) clearPendingGen();
     if (reply || msgAttachments.length) {
-      messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
+      const sameContent = previousAssistant
+        && previousAssistant.content === reply
+        && (Array.isArray(previousAssistant.attachments) ? previousAssistant.attachments.length : 0) === msgAttachments.length;
+      if (sameContent) {
+        masterRow?.remove();
+      } else {
+        messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
+      }
       saveCurrentMessages();
       updateRegenerateAvailability();
       if (responseBubble) responseBubble._rawText = reply;
@@ -187,8 +204,9 @@ function showNoResponseError(retryFn) {
   }, { once: true });
 }
 
-// Usa um ícone de envio inline para não depender de uma imagem remota.
-const SEND_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--bg)"><path d="M3 11.5L21 3l-6.5 18-3.5-7.5L3 11.5z"/></svg>`;
+// O botão de envio volta sempre para o PNG oficial depois do modo "parar".
+// O modo parada continua usando o quadrado inline, que é um estado diferente.
+const SEND_ICON = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/send_msg.png" alt="Enviar mensagem" draggable="false">`;
 const STOP_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--bg)"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`;
 
 function showStopBtn() {
@@ -1175,7 +1193,7 @@ function closeExtraThink(state) { state.el = null; state.outEl = null; state.tex
 
 // Ícone único do processo de pensamento. O markup abaixo é reaplicado depois
 // da montagem para manter o mesmo desenho em todos os fluxos.
-const BOREAS_BRAIN_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1-1.32-4.24 2.5 2.5 0 0 1-4.44-1.66z"/></svg>`;
+const BOREAS_BRAIN_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5a3 3 0 1 0-5.997.125A4 4 0 0 0 3.5 9.75a4 4 0 0 0 1.03 6.79A4 4 0 0 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125A4 4 0 0 1 20.5 9.75a4 4 0 0 1-1.03 6.79A4 4 0 0 1 12 18Z"/><path d="M12 5v13"/><path d="M9 7.5a4 4 0 0 0 3 3.5"/><path d="M15 7.5a4 4 0 0 1-3 3.5"/><path d="M9 15a4 4 0 0 1 3-3.5"/><path d="M15 15a4 4 0 0 0-3-3.5"/></svg>`;
 
 // Novo renderer: reasoning e tools são segmentos independentes. A pill de
 // pensamento nunca recebe task-items; cada tool fica em um cartão inline.
@@ -1437,6 +1455,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
           const chunk = JSON.parse(raw);
           if (chunk.type === "gen_id") {
             currentGenId = chunk.id;
+            if (botRow) botRow.dataset.generationId = String(chunk.id);
             savePendingGen(chunk.id, localStorage.getItem(ACTIVE_KEY));
             stopNoResponseWatchdog();
             continue;
@@ -1676,7 +1695,12 @@ async function send() {
   messages.push({ role: "user", content: userContent });
   saveCurrentMessages();
 
-  const displayContent = imagesSnapshot.length ? (text || "") : (typeof userContent === "string" ? userContent : text);
+  // Mantém o conteúdo visível do anexo no mesmo caminho de renderização da
+  // mensagem. Antes, quando havia arquivo de texto, displayContent virava
+  // string vazia e o modelo recebia o arquivo, mas a bolha do usuário não.
+  const displayContent = imagesSnapshot.length
+    ? (text || "")
+    : (fileSnapshot ? userContent : (typeof userContent === "string" ? userContent : text));
   appendMessage("user", displayContent, imagesSnapshot, userMsgIndex);
 
   if (isFirstMessage && (text || fileSnapshot) && activeChatId) generateTitle(activeChatId, text || fileSnapshot.name);
@@ -1775,6 +1799,7 @@ async function send() {
 
           if (chunk.type === "gen_id") {
             currentGenId = chunk.id;
+            if (masterRow) masterRow.dataset.generationId = String(chunk.id);
             savePendingGen(chunk.id, localStorage.getItem(ACTIVE_KEY));
             stopNoResponseWatchdog();
             continue;
@@ -2182,6 +2207,7 @@ async function resumePending(pluginOverride) {
           if (chunk.type === "gen_id") {
 
             currentGenId = chunk.id;
+            if (masterRow) masterRow.dataset.generationId = String(chunk.id);
             savePendingGen(chunk.id, localStorage.getItem(ACTIVE_KEY));
             stopNoResponseWatchdog();
             continue;
