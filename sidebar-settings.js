@@ -1,4 +1,4 @@
-// Boreas — sidebar, menu de modelos e configurações.
+// Boreas: sidebar, menu de modelos e configurações.
 
 async function generateTitle(chatId, promptText) {
   try {
@@ -192,10 +192,10 @@ function updateSidebarUser() {
   const initial = name ? name[0].toUpperCase() : "?";
   const el = id => document.getElementById(id);
   if (el("sidebar-avatar"))       el("sidebar-avatar").textContent = initial;
-  if (el("sidebar-user-name"))    el("sidebar-user-name").textContent = name || "—";
+  if (el("sidebar-user-name"))    el("sidebar-user-name").textContent = name || "-";
   if (el("settings-avatar-lg"))   el("settings-avatar-lg").textContent = initial;
-  if (el("settings-user-name-modal")) el("settings-user-name-modal").textContent = name || "—";
-  if (el("settings-user-email"))  el("settings-user-email").textContent = email || "—";
+  if (el("settings-user-name-modal")) el("settings-user-name-modal").textContent = name || "-";
+  if (el("settings-user-email"))  el("settings-user-email").textContent = email || "-";
 }
 
 function updateMemoryBtns() {
@@ -236,7 +236,7 @@ document.getElementById("memory-info-btn").addEventListener("click", e => {
   const state = chatMemoryEnabled ? "ligadas" : "desligadas";
   popup.innerHTML = `
     <div class="memory-popup-title">Memória do Boreas</div>
-    <div class="memory-popup-desc">Ao ativar, o Boreas vai usar o resumo gerado automaticamente para dar contexto ao modelo, sabendo mais sobre seus interesses e personalidade.</div>
+    <div class="memory-popup-desc">Ao ativar, o Boreas pode usar a memória persistente organizada por categorias. O modelo adiciona ou consulta itens quando isso for relevante.</div>
     <div class="memory-popup-status">Atualmente as memórias estão <strong>${state}</strong> para essa conversa.</div>`;
   const r = document.getElementById("memory-info-btn").getBoundingClientRect();
   popup.style.top   = (r.bottom + 8) + "px";
@@ -279,7 +279,7 @@ function openSettingsSubview(target) {
     connectors: "Conectores", fontstyle: "Estilo de fonte", privacy: "Privacidade",
     memory: "Memória",
   };
-  document.getElementById("sub-title").textContent = titles[target] ?? "—";
+  document.getElementById("sub-title").textContent = titles[target] ?? "-";
   document.getElementById("sub-body").innerHTML = "";
   document.getElementById("sub-body").dataset.view = target;
   document.getElementById("view-main").classList.remove("active");
@@ -395,7 +395,7 @@ async function renderProfileView(body) {
       updateSidebarUser();
       saveBtn.textContent = "Atualizar perfil";
     } catch {
-      saveBtn.textContent = "Erro — tentar novamente";
+      saveBtn.textContent = "Erro - tentar novamente";
       saveBtn.disabled = false;
     }
   });
@@ -444,8 +444,8 @@ async function renderCapabilitiesView(body) {
     </div>
     <div class="settings-section-label">Memória</div>
     <div class="settings-row">
-      <div><div class="settings-row-label">Gerar memória a partir de suas conversas</div>
-        <div class="settings-row-sub">Permitir que o Boreas lembre do contexto relevante das suas conversas</div></div>
+      <div><div class="settings-row-label">Memória persistente</div>
+        <div class="settings-row-sub">Permitir que o modelo guarde e consulte contexto relevante por categoria</div></div>
       <div class="toggle-switch" id="memory-global-toggle"><div class="toggle-knob"></div></div>
     </div>
     <button class="settings-menu-item" id="memory-nav-row" style="background:var(--surface);border:1px solid var(--border);border-radius:12px">
@@ -523,7 +523,7 @@ function renderMemoryView(body) {
         <button id="memory-edit-btn">✏️</button>
       </div>
       <div id="memory-editor-wrap">
-        <textarea id="memory-editor-textarea" placeholder="Nenhuma memória ainda..."></textarea>
+        <textarea id="memory-editor-textarea" placeholder="## You\n- Preferências e fatos importantes sobre você..."></textarea>
         <div class="memory-editor-btns">
           <button id="memory-editor-cancel">Cancelar</button>
           <button id="memory-editor-save">Salvar</button>
@@ -555,7 +555,7 @@ function renderMemoryView(body) {
       document.getElementById("memory-editor-wrap").classList.remove("open");
     } else {
       // BoreasSync centralizes authenticated chats, memory, and usage calls.
-      btn.textContent = res.error === "unauthorized" ? "Sessão expirada" : "Sem conexão — será enviado depois";
+      btn.textContent = res.error === "unauthorized" ? "Sessão expirada" : "Sem conexão - será enviado depois";
     }
     btn.disabled = false;
     if (btn.textContent === "Salvando...") btn.textContent = "Salvar";
@@ -725,7 +725,7 @@ function renderUsage(period) {
   const el = document.getElementById("usage-display");
   if (!_usageData) { el.innerHTML = '<div class="usage-loading">Sem dados ainda.</div>'; return; }
   const d = _usageData[period];
-  if (!d) { el.innerHTML = '<div class="usage-loading">—</div>'; return; }
+  if (!d) { el.innerHTML = '<div class="usage-loading">-</div>'; return; }
   const promptTokens = Number(d.prompt_tokens ?? 0);
   const completionTokens = Number(d.completion_tokens ?? 0);
   const totalTokens = Math.max(0, Number(d.total_tokens ?? promptTokens + completionTokens));
@@ -886,7 +886,7 @@ const RESUME_FAIL_REASONS = {
   parse_error: "O modelo devolveu uma resposta em formato inesperado. Tente de novo.",
   bad_shape: "O modelo devolveu uma resposta em formato inesperado. Tente de novo.",
   error: "Algo deu errado ao resumir. Tente de novo.",
-  "unauthorized": "Sessão expirada — faça login de novo.",
+  "unauthorized": "Sessão expirada - faça login de novo.",
 };
 async function resumeConversation(chatId) {
   const overlay = document.getElementById("resume-overlay");
@@ -906,7 +906,7 @@ async function resumeConversation(chatId) {
   const pct = charsBefore > 0 ? Math.round((1 - charsAfter / charsBefore) * 100) : 0;
   showResumeResult(
     "Conversa resumida!",
-    `${messagesCompacted} mensagem(ns) antiga(s) foram condensadas — histórico ${pct > 0 ? `~${pct}% menor` : "atualizado"}.`
+    `${messagesCompacted} mensagem(ns) antiga(s) foram condensadas - histórico ${pct > 0 ? `~${pct}% menor` : "atualizado"}.`
   );
 
   // Se o chat resumido é o que está aberto agora, recarrega pra refletir o

@@ -1,4 +1,4 @@
-// Boreas — camada de rede, cache e fila de sincronização.
+// Boreas: camada de rede, cache e fila de sincronização.
 
 // URL pública fixa do backend, definida em backend-config.js.
 const BACKEND_URL = globalThis.BOREAS_BACKEND_URL;
@@ -60,7 +60,7 @@ async function registerBackgroundSync() {
     if (!("serviceWorker" in navigator)) return;
     const reg = await navigator.serviceWorker.ready;
     if (reg.sync) await reg.sync.register("boreas-flush-queue");
-  } catch (e) { /* Background Sync indisponível — sem problema, tem os fallbacks */ }
+  } catch (e) { /* Background Sync indisponível; os fallbacks continuam ativos. */ }
 }
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js").catch(e => console.warn("[SW] registro falhou:", e.message));
@@ -194,13 +194,16 @@ const BoreasSync = (() => {
       return cacheGet("chat_" + id) ?? null;
     },
     // Permite pintar imediatamente uma conversa já visitada, sem esperar a
-    // rede. O refresh explícito abaixo atualiza o cache em paralelo.
+    // rede. loadChat chama revalidate explicitamente depois da primeira pintura.
     peek(id) { return cacheGet("chat_" + id) ?? null; },
-    async refresh(id) {
+    async revalidate(id, baseline = null) {
       const res = await request("/chats/" + id, { retries: 1, timeoutMs: 4000 });
-      if (!res.ok) return null;
-      cacheSet("chat_" + id, res.data.chat);
-      return res.data.chat;
+      if (!res.ok) return { chat: null, changed: false };
+      const fresh = res.data.chat;
+      const previous = baseline ?? cacheGet("chat_" + id);
+      const changed = JSON.stringify(fresh ?? {}) !== JSON.stringify(previous ?? {});
+      cacheSet("chat_" + id, fresh);
+      return { chat: fresh, changed };
     },
     async search(query) {
       const q = String(query ?? "").trim();
@@ -262,7 +265,7 @@ const BoreasSync = (() => {
   };
 
   document.addEventListener("boreas:session-expired", () => {
-    console.warn("[BoreasSync] Sessão inválida/expirada — dados locais preservados, mas leituras/escritas vão falhar até novo login.");
+    console.warn("[BoreasSync] Sessão inválida/expirada - dados locais preservados, mas leituras/escritas vão falhar até novo login.");
   });
 
   return { request, chats, memory, usage, isAuthed, flushQueue };

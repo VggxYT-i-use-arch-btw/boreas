@@ -1,4 +1,4 @@
-// Boreas — estado e CRUD local/remoto de conversas.
+// Boreas: estado e CRUD local/remoto de conversas.
 
 const TIERS = {
   altra:  { label: "Boreas Altra I" },
@@ -52,6 +52,7 @@ let messages     = [];
 let loading      = false;
 let pendingImages = [];
 let pendingFile  = null;
+let chatLoadGeneration = 0;
 
 let memoryEnabledGlobal = localStorage.getItem("boreas_memory_global") !== "false";
 let chatMemoryEnabled   = true;
@@ -97,7 +98,7 @@ async function pushChatToServer(id, title, msgs, tier, speed, effort, { keepaliv
 
   const res = await BoreasSync.chats.save({ id, title, messages: safeMsgs, tier, speed, effort }, { keepalive });
   if (!res.ok) {
-    console.warn("[pushChatToServer] falhou (" + res.error + ") — chat enfileirado para reenvio automático:", id);
+    console.warn("[pushChatToServer] falhou (" + res.error + ") - chat enfileirado para reenvio automático:", id);
     return false;
   }
 
@@ -248,13 +249,18 @@ function escHtml(s) {
 
 async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
 
+  const loadGeneration = ++chatLoadGeneration;
+
   if (currentAbortController) { try { currentAbortController.abort(); } catch {} }
   loading = false;
   hideStopBtn();
   currentAbortController = null;
   removeTyping();
 
-  const immediateChat = cachedChat || ((!skipRemote && BoreasSync.isAuthed()) ? BoreasSync.chats.peek(id) : null);
+  const cachedSnapshot = !cachedChat && !skipRemote && BoreasSync.isAuthed()
+    ? BoreasSync.chats.peek(id)
+    : null;
+  const immediateChat = cachedChat || cachedSnapshot;
   let chat = immediateChat || ((!skipRemote && BoreasSync.isAuthed()) ? await BoreasSync.chats.get(id) : null);
 
   if (!chat && _chatsMeta[id]) chat = { ..._chatsMeta[id], messages: [] };
@@ -346,12 +352,15 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
 
   // O cache atende a primeira pintura; a rede atualiza silenciosamente em
   // paralelo. Não re-renderiza enquanto outra geração ou anexo estiver ativo.
-  if (immediateChat && !cachedChat && !skipRemote && BoreasSync.isAuthed()) {
-    BoreasSync.chats.refresh(id).then(fresh => {
+  if (cachedSnapshot && !cachedChat && !skipRemote && BoreasSync.isAuthed()) {
+    // O cache é apenas a primeira pintura. Esta chamada sempre vai à rede,
+    // mesmo quando o cache existe, e só remonta a conversa se houver mudança.
+    BoreasSync.chats.revalidate(id, cachedSnapshot).then(result => {
       const active = localStorage.getItem(ACTIVE_KEY) === id;
-      const safeToRefresh = active && !loading && !pendingImages.length && !pendingFile;
-      if (fresh && safeToRefresh && JSON.stringify(fresh.messages ?? []) !== JSON.stringify(chat.messages ?? [])) {
-        loadChat(id, { skipRemote: true, cachedChat: fresh });
+      const safeToRefresh = active && loadGeneration === chatLoadGeneration
+        && !loading && !pendingImages.length && !pendingFile;
+      if (result?.chat && result.changed && safeToRefresh) {
+        loadChat(id, { skipRemote: true, cachedChat: result.chat });
       }
     }).catch(() => {});
   }

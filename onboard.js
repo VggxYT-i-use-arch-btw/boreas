@@ -1,4 +1,4 @@
-// Boreas — loading screen, onboarding e autenticação.
+// Boreas: loading screen, onboarding e autenticação.
 
 (function () {
   var PHRASES = [

@@ -1,4 +1,4 @@
-// Boreas — anexos, imagens, compressão, preview e IndexedDB.
+// Boreas: anexos, imagens, compressão, preview e IndexedDB.
 
 const FILE_KIND_ICONS = {
   image:    `<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>`,
@@ -115,7 +115,7 @@ function createFileCard(name, b64, mime) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (e) {
       console.error("[createFileCard] base64 corrompido:", e);
-      alert("Não foi possível baixar o arquivo — os dados estão corrompidos.");
+      alert("Não foi possível baixar o arquivo - os dados estão corrompidos.");
     }
   });
   card.appendChild(downloadBtn);
@@ -144,14 +144,21 @@ function copyText(text, btn) {
   }
 }
 const IMG_DB_NAME = "boreas_images";
-const IMG_DB_VERSION = 2;
-const IMAGE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const IMG_DB_VERSION = 3;
+const ATTACHMENT_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 let _imgDb = null;
 
-// Reduz a chance de o navegador remover referências de imagens do IndexedDB
-// sob pressão de armazenamento. A política de retenção do app continua sendo
-// independente desta solicitação best-effort.
-if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
+async function requestPersistentStorage() {
+  try {
+    if (navigator.storage?.persist && !(await navigator.storage.persisted?.())) {
+      await navigator.storage.persist();
+    }
+  } catch {}
+}
+
+// O navegador pode despejar IndexedDB sob pressão de espaço. A persistência é
+// solicitada cedo e novamente após uma ação explícita de anexar.
+requestPersistentStorage();
 
 function openImgDb() {
   if (_imgDb) return Promise.resolve(_imgDb);
@@ -207,7 +214,7 @@ async function idbGetImage(key) {
 async function cleanupExpiredImages() {
   const db = _imgDb;
   if (!db) return;
-  const cutoff = Date.now() - IMAGE_RETENTION_MS;
+  const cutoff = Date.now() - ATTACHMENT_RETENTION_MS;
   const expired = await new Promise((res, rej) => {
     const tx = db.transaction("images", "readonly");
     const store = tx.objectStore("images");
@@ -231,6 +238,10 @@ async function cleanupExpiredImages() {
     tx.onerror = e => rej(e.target.error);
   });
 }
+setInterval(() => cleanupExpiredImages().catch(() => {}), 6 * 60 * 60 * 1000);
+document.addEventListener("visibilitychange", () => {
+  if (!document.hidden) cleanupExpiredImages().catch(() => {});
+});
 async function idbDeleteByPrefix(prefix) {
   const db = await openImgDb();
   // Antes: cursor.delete() seguido de cursor.continue() no mesmo onsuccess.
@@ -272,7 +283,7 @@ async function compressImage(file) {
     const cleanup = () => { clearTimeout(timer); URL.revokeObjectURL(url); };
     const timer = setTimeout(() => {
       cleanup();
-      reject(new Error(`Não foi possível ler "${file.name}" — formato não suportado (tente JPG/PNG) ou arquivo corrompido.`));
+      reject(new Error(`Não foi possível ler "${file.name}" - formato não suportado (tente JPG/PNG) ou arquivo corrompido.`));
     }, 10000);
     img.onload = () => {
       cleanup();
@@ -285,7 +296,7 @@ async function compressImage(file) {
     };
     img.onerror = () => {
       cleanup();
-      reject(new Error(`Não foi possível ler "${file.name}" — formato não suportado (tente JPG/PNG) ou arquivo corrompido.`));
+      reject(new Error(`Não foi possível ler "${file.name}" - formato não suportado (tente JPG/PNG) ou arquivo corrompido.`));
     };
     img.src = url;
   });
@@ -366,7 +377,7 @@ function closeAttachSheet() {
   attachSheet.classList.remove("open");
   attachSheetBackdrop.classList.remove("show");
 }
-attachBtn.addEventListener("click", e => { e.stopPropagation(); openAttachSheet(); });
+attachBtn.addEventListener("click", e => { e.stopPropagation(); requestPersistentStorage(); openAttachSheet(); });
 document.getElementById("asheet-close").addEventListener("click", closeAttachSheet);
 attachSheetBackdrop.addEventListener("click", closeAttachSheet);
 

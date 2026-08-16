@@ -1,4 +1,4 @@
-// Boreas — streaming, renderização, envio e regeneração.
+// Boreas: streaming, renderização, envio e regeneração.
 
 let currentAbortController = null;
 
@@ -36,7 +36,7 @@ function showSyncBanner(genId) {
   const banner = document.createElement("div");
   banner.id = "sync-banner";
   banner.className = "resume-banner-el";
-  banner.innerHTML = `<span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12h8"></path><path d="M12 8v8"></path><path d="M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z"></path></svg> Conexão interrompida — a resposta pode ter continuado.</span><button id="sync-btn">Reconectar</button>`;
+  banner.innerHTML = `<span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 12h8"></path><path d="M12 8v8"></path><path d="M7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3Z"></path></svg> Conexão interrompida - a resposta pode ter continuado.</span><button id="sync-btn">Reconectar</button>`;
   messagesEl.appendChild(banner);
   scrollToBottom();
   document.getElementById("sync-btn").addEventListener("click", () => syncGeneration(genId));
@@ -451,7 +451,7 @@ function buildToolResultVisual(tool, output, value) {
         img.src = im.url; img.loading = "lazy"; img.alt = im.description || im.domain || "";
         img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block";
         const pill = document.createElement("span");
-        pill.style.cssText = "position:absolute;left:8px;bottom:8px;display:flex;align-items:center;gap:5px;background:rgba(20,20,20,.72);backdrop-filter:blur(6px);color:#fff;font-size:11px;padding:5px 9px;border-radius:999px;max-width:calc(100% - 16px);overflow:hidden";
+        pill.style.cssText = "position:absolute;left:8px;bottom:8px;display:flex;align-items:center;gap:5px;background:rgba(20,20,20,.92);color:#fff;font-size:11px;padding:5px 9px;border-radius:999px;max-width:calc(100% - 16px);overflow:hidden";
         if (im.domain) {
           const fav = document.createElement("img");
           fav.src = `https://www.google.com/s2/favicons?domain=${im.domain}&sz=32`;
@@ -576,7 +576,7 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
   if (false && col && (hasThinking || hasSteps)) {
     const pill = document.createElement("button");
     pill.className = "tasks-pill";
-    pill.innerHTML = `<span style="flex-shrink:0;display:flex;align-items:center;color:rgba(154,212,240,0.85)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span>Processo de pensamento<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+    pill.innerHTML = `<span class="thinking-segment-icon">${BOREAS_BRAIN_ICON}</span>Processo de pensamento<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
     const detail = document.createElement("div");
     detail.className = "tasks-detail";
     pill.addEventListener("click", () => { pill.classList.toggle("expanded"); detail.classList.toggle("visible"); });
@@ -989,7 +989,7 @@ function renderAskUserPromptCard(col, promptId, questions) {
     // desiste depois de 5min e manda tudo como "não respondido", igual o
     // timeout que o servidor já aplica no /prompt-response.
     const safetyTimer = setTimeout(() => {
-      console.warn("[aup] safety timeout — resolvendo sem resposta");
+      console.warn("[aup] safety timeout - resolvendo sem resposta");
       finish();
     }, 300000);
 
@@ -1164,7 +1164,9 @@ function ensureExtraThinkItem(stepsDetail, state) {
 function ensureActivityPill(state, mountFn) {
   if (state.pill) return state;
   state.pill = document.createElement("button"); state.pill.className = "tasks-pill";
-  state.pill.innerHTML = `<span style="flex-shrink:0;display:flex;align-items:center;color:rgba(154,212,240,0.85)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span>Processo de pensamento<span class="tp-dots"><span></span><span></span><span></span></span><svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+  state.pill.innerHTML = `<span class="thinking-segment-icon">${BOREAS_BRAIN_ICON}</span><span>Processo de pensamento</span><span class="tp-dots"><span></span><span></span><span></span></span><svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+  const activityBrainIcon = state.pill.querySelector("span:first-child");
+  if (activityBrainIcon) activityBrainIcon.innerHTML = BOREAS_BRAIN_ICON;
   state.detail = document.createElement("div"); state.detail.className = "tasks-detail";
   state.pill.addEventListener("click", () => {
     if (typeof isMobile !== "undefined" && isMobile) {
@@ -1200,9 +1202,8 @@ const BOREAS_BRAIN_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill=
 function ensureThinkingSegment(state, mountFn) {
   if (state.pill) return state;
   state.pill = document.createElement("button");
-  state.pill.type = "button";
+  state.pill.innerHTML = `<span class="thinking-segment-icon">${BOREAS_BRAIN_ICON}</span><span>Processo de pensamento</span><span class="thinking-segment-status">Pensando</span><svg class="thinking-segment-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
   state.pill.className = "thinking-segment-pill";
-  state.pill.innerHTML = `<span class="thinking-segment-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span><span>Processo de pensamento</span><span class="thinking-segment-status">Pensando</span><svg class="thinking-segment-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
   const brainIcon = state.pill.querySelector(".thinking-segment-icon");
   if (brainIcon) brainIcon.innerHTML = BOREAS_BRAIN_ICON;
   state.detail = document.createElement("div"); state.detail.className = "thinking-segment-detail";
@@ -1350,7 +1351,7 @@ function renderAgenticLoopCard(col, chunk) {
 
   const currentEl = card.querySelector(".dr-card-current");
   if (chunk.done && chunk.converged === false) {
-    currentEl.innerHTML = `<span class="dr-card-done-msg" style="color:#e08a8a">Não convergiu a tempo — parou sem atingir 100%.</span>`;
+    currentEl.innerHTML = `<span class="dr-card-done-msg" style="color:#e08a8a">Não convergiu a tempo - parou sem atingir 100%.</span>`;
   } else if (chunk.done) {
     currentEl.innerHTML = `<span class="dr-card-done-msg">Objetivo alcançado</span>`;
   } else if (chunk.summary) {
@@ -1592,7 +1593,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
             responseBubble._rawText = currentBubbleText;
             scrollToBottom(); await new Promise(r => setTimeout(r, 0));
           }
-        } catch (parseErr) { /* SSE inválida — ignorar */ }
+        } catch (parseErr) { /* SSE inválida; ignorar. */ }
       }
     }
 
@@ -1769,7 +1770,7 @@ async function send() {
     let responseBubble = null; let currentBubbleText = ""; // Guarda o texto apenas da bolha atual, separado do reply total salvo no histórico.
     let pendingSources = null;
 
-    const BRAIN_ICON = `<span style="flex-shrink:0;display:flex;align-items:center;color:rgba(154,212,240,0.85)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span>`;
+    const BRAIN_ICON = BOREAS_BRAIN_ICON;
     const CHEVRON = `<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
     const DOTS = `<span style="display:inline-flex;gap:3px;margin-left:2px"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
     const BOT_IMG = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" loading="lazy" decoding="async" draggable="false">`;
@@ -1841,7 +1842,7 @@ async function send() {
           }
 
           if (chunk.type === "token_exhausted") {
-            console.warn(`⚠️ Token HF esgotado no servidor — ${chunk.remaining}/${chunk.total} restantes.`);
+            console.warn(`⚠️ Token HF esgotado no servidor - ${chunk.remaining}/${chunk.total} restantes.`);
             continue;
           }
 
@@ -2178,7 +2179,7 @@ async function resumePending(pluginOverride) {
   let hasUsedTool = false; const extraThinkState = {};
     let responseBubble = null;
 
-    const BRAIN_ICON = `<span style="flex-shrink:0;display:flex;align-items:center;color:rgba(154,212,240,0.85)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span>`;
+    const BRAIN_ICON = BOREAS_BRAIN_ICON;
     const CHEVRON = `<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
     const DOTS = `<span style="display:inline-flex;gap:3px;margin-left:2px"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
     const BOT_IMG = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" style="width:42px;height:42px;object-fit:contain;opacity:0.95" loading="lazy" decoding="async" draggable="false">`;
@@ -2242,7 +2243,7 @@ async function resumePending(pluginOverride) {
             continue;
           }
           if (chunk.type === "token_exhausted") {
-            console.warn(`⚠️ Token HF esgotado no servidor — ${chunk.remaining}/${chunk.total} restantes.`);
+            console.warn(`⚠️ Token HF esgotado no servidor - ${chunk.remaining}/${chunk.total} restantes.`);
             continue;
           }
           if (chunk.type === "step") {
@@ -2353,7 +2354,7 @@ async function resumePending(pluginOverride) {
             scrollToBottom();
             await new Promise(r => setTimeout(r, 0));
           }
-        } catch (parseErr) { /* SSE inválida — ignorar */ }
+        } catch (parseErr) { /* SSE inválida; ignorar. */ }
       }
     }
 

@@ -1,4 +1,4 @@
-// Boreas — composer, formato do input, plugins e menções.
+// Boreas: composer, formato do input, plugins e menções.
 
 const modelPill  = document.getElementById("model-pill");
 const modelLabel = document.getElementById("model-label");
