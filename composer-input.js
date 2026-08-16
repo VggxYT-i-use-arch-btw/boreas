@@ -193,11 +193,27 @@ document.body.appendChild(_radiusMirror);
 
 function getCollapsedWidth() {
   const row = document.querySelector(".input-row");
+  if (!row) return msgInput.clientWidth;
 
-  if (row && !row.classList.contains("expanded")) {
+  if (!row.classList.contains("expanded")) {
     _collapsedWidth = msgInput.clientWidth;
+    return _collapsedWidth;
   }
-  return _collapsedWidth ?? msgInput.clientWidth;
+
+  // Estamos no estado expandido (é justamente quando updateInputRadius()
+  // mais precisa medir "quanto mediria a caixa colapsada" pra decidir se dá
+  // pra encolher). Antes, isso caía no fallback `_collapsedWidth ?? clientWidth`
+  // e ficava lendo um valor cacheado antigo (ou, na primeira vez, o próprio
+  // clientWidth JÁ EXPANDIDO, que é bem mais largo que o colapsado). Isso
+  // fazia o cálculo de quebra de linha errar e a barra virar bolinha (999px)
+  // mesmo com texto que ainda precisa de 2 linhas, ou travar quadrada quando
+  // não devia. Tira a classe, mede de verdade, bota de volta - tudo síncrono,
+  // então o navegador nunca chega a pintar o estado intermediário.
+  row.classList.remove("expanded");
+  const w = msgInput.clientWidth;
+  row.classList.add("expanded");
+  _collapsedWidth = w;
+  return w;
 }
 window.addEventListener("resize", () => { _collapsedWidth = null; });
 

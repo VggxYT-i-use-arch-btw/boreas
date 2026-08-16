@@ -709,7 +709,15 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
       } else {
         // Mensagens do usuário também aceitam Markdown. O renderer já passa
         // pelo mesmo marked + DOMPurify usado nas respostas do Boreas.
-        renderMarkdown(bubble, content);
+        // IMPORTANTE: nunca chamar renderMarkdown(bubble, ...) direto aqui -
+        // renderMarkdownNow faz `el.innerHTML = ...`, e se a bubble já tem o
+        // grid de imagens anexado (bloco acima), isso apaga o grid inteiro.
+        // Era por isso que a imagem sumia da bolha sempre que a mensagem
+        // tinha legenda (o modelo via a imagem via API normalmente, só a
+        // UI que perdia ela). Renderiza num filho separado.
+        const textEl = document.createElement("div");
+        renderMarkdown(textEl, content);
+        bubble.appendChild(textEl);
       }
     }
   }
