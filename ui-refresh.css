@@ -135,11 +135,20 @@ button:active { transform: scale(.97); }
 #chat-screen::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(780px 560px at 68% 30%, rgba(76, 52, 145, .12), transparent 72%); }
 .top-bar {
   display: flex !important;
+  position: relative;
+  isolation: isolate;
+}
+.top-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
   background: linear-gradient(to bottom, rgba(8,10,16,.82), rgba(8,10,16,.48));
   -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
   mask-image: linear-gradient(to bottom, #000 0%, #000 78%, transparent 100%);
 }
-.top-bar::after { content: ""; position: absolute; z-index: 0; top: 100%; left: 0; right: 0; height: 22px; pointer-events: none; background: linear-gradient(to bottom, rgba(8,10,16,.42), transparent); }
+.top-bar::after { content: ""; position: absolute; z-index: -1; top: 100%; left: 0; right: 0; height: 22px; pointer-events: none; background: linear-gradient(to bottom, rgba(8,10,16,.42), transparent); }
 #hamburger-btn { width: 42px; height: 42px; border: 1px solid var(--border-soft); border-radius: 14px; background: var(--surface); color: var(--text-dim); }
 #hamburger-btn:hover { color: var(--text); background: var(--hover); border-color: var(--border); }
 .model-pill { min-height: 42px; padding: 10px 14px; border: 1px solid var(--border-soft); background: rgba(255,255,255,.045); box-shadow: none; font-size: 13px; font-weight: 700; }
