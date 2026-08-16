@@ -246,7 +246,7 @@ function escHtml(s) {
     .replace(/'/g, "&#39;");
 }
 
-async function loadChat(id, { skipRemote = false } = {}) {
+async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
 
   if (currentAbortController) { try { currentAbortController.abort(); } catch {} }
   loading = false;
@@ -254,7 +254,8 @@ async function loadChat(id, { skipRemote = false } = {}) {
   currentAbortController = null;
   removeTyping();
 
-  let chat = (!skipRemote && BoreasSync.isAuthed()) ? await BoreasSync.chats.get(id) : null;
+  const immediateChat = cachedChat || ((!skipRemote && BoreasSync.isAuthed()) ? BoreasSync.chats.peek(id) : null);
+  let chat = immediateChat || ((!skipRemote && BoreasSync.isAuthed()) ? await BoreasSync.chats.get(id) : null);
 
   if (!chat && _chatsMeta[id]) chat = { ..._chatsMeta[id], messages: [] };
   if (!chat) return;
@@ -340,4 +341,16 @@ async function loadChat(id, { skipRemote = false } = {}) {
   }
 
   renderSidebar();
+
+  // O cache atende a primeira pintura; a rede atualiza silenciosamente em
+  // paralelo. Não re-renderiza enquanto outra geração ou anexo estiver ativo.
+  if (immediateChat && !cachedChat && !skipRemote && BoreasSync.isAuthed()) {
+    BoreasSync.chats.refresh(id).then(fresh => {
+      const active = localStorage.getItem(ACTIVE_KEY) === id;
+      const safeToRefresh = active && !loading && !pendingImages.length && !pendingFile;
+      if (fresh && safeToRefresh && JSON.stringify(fresh.messages ?? []) !== JSON.stringify(chat.messages ?? [])) {
+        loadChat(id, { skipRemote: true, cachedChat: fresh });
+      }
+    }).catch(() => {});
+  }
 }

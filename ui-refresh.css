@@ -134,6 +134,7 @@ button:active { transform: scale(.97); }
 }
 #chat-screen::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background: radial-gradient(780px 560px at 68% 30%, rgba(76, 52, 145, .12), transparent 72%); }
 .top-bar { min-height: 72px; padding: 14px clamp(16px, 3vw, 32px); gap: 10px; border-bottom: 1px solid var(--border-soft); background: rgba(8,10,16,.64); backdrop-filter: blur(22px); -webkit-backdrop-filter: blur(22px); }
+.top-bar::after { content: ""; position: absolute; z-index: 0; top: 100%; left: 0; right: 0; height: 22px; pointer-events: none; background: linear-gradient(to bottom, rgba(8,10,16,.42), transparent); }
 #hamburger-btn { width: 42px; height: 42px; border: 1px solid var(--border-soft); border-radius: 14px; background: var(--surface); color: var(--text-dim); }
 #hamburger-btn:hover { color: var(--text); background: var(--hover); border-color: var(--border); }
 .model-pill { min-height: 42px; padding: 10px 14px; border: 1px solid var(--border-soft); background: rgba(255,255,255,.045); box-shadow: none; font-size: 13px; font-weight: 700; }
@@ -279,12 +280,13 @@ button:active { transform: scale(.97); }
 
 /* Refinements: compact density, fixed desktop navigation and focused sheets. */
 .msg-regenerate-btn[hidden] { display: none !important; }
-.msg-regenerate-btn svg { transform: translateY(-1px); }
+.msg-regenerate-btn svg { transform: none; }
 .sidebar-chat-match { margin-top: 5px; color: var(--text-dim); font-size: 10px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .sidebar-empty-msg { padding: 20px 12px; }
+.sidebar-error-toast { position: fixed; z-index: 260; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: min(360px, calc(100vw - 32px)); padding: 11px 14px; border: 1px solid rgba(248,113,113,.28); border-radius: 12px; background: rgba(75,20,30,.94); color: #ffd9de; box-shadow: 0 12px 36px rgba(0,0,0,.34); font-size: 12px; font-weight: 600; text-align: center; }
 
 #send-btn { overflow: hidden; }
-#send-btn img { width: 100%; height: 100%; object-fit: contain; display: block; }
+#send-btn img { width: 65%; height: 65%; object-fit: contain; display: block; }
 #send-btn:disabled img { opacity: .48; }
 
 /* The desktop attachment picker is an anchored command card. Mobile keeps

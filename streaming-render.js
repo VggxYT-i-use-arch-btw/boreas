@@ -689,7 +689,9 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
           bubble.appendChild(rest);
         }
       } else {
-        const span = document.createElement("span"); span.textContent = content; bubble.appendChild(span);
+        // Mensagens do usuário também aceitam Markdown. O renderer já passa
+        // pelo mesmo marked + DOMPurify usado nas respostas do Boreas.
+        renderMarkdown(bubble, content);
       }
     }
   }
@@ -1171,6 +1173,10 @@ function appendExtraThink(stepsDetail, state, delta) {
 }
 function closeExtraThink(state) { state.el = null; state.outEl = null; state.text = ""; }
 
+// Ícone único do processo de pensamento. O markup abaixo é reaplicado depois
+// da montagem para manter o mesmo desenho em todos os fluxos.
+const BOREAS_BRAIN_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1-1.32-4.24 2.5 2.5 0 0 1-4.44-1.66z"/></svg>`;
+
 // Novo renderer: reasoning e tools são segmentos independentes. A pill de
 // pensamento nunca recebe task-items; cada tool fica em um cartão inline.
 function ensureThinkingSegment(state, mountFn) {
@@ -1179,6 +1185,8 @@ function ensureThinkingSegment(state, mountFn) {
   state.pill.type = "button";
   state.pill.className = "thinking-segment-pill";
   state.pill.innerHTML = `<span class="thinking-segment-icon"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-1.66z"/><path d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96-.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-1.66z"/></svg></span><span>Processo de pensamento</span><span class="thinking-segment-status">Pensando</span><svg class="thinking-segment-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+  const brainIcon = state.pill.querySelector(".thinking-segment-icon");
+  if (brainIcon) brainIcon.innerHTML = BOREAS_BRAIN_ICON;
   state.detail = document.createElement("div"); state.detail.className = "thinking-segment-detail";
   state.textEl = document.createElement("div"); state.textEl.className = "thinking-segment-text";
   state.itemsEl = document.createElement("div"); state.itemsEl.className = "thinking-segment-items";
@@ -1613,7 +1621,6 @@ async function regenerate(botRow, botBubble, actionsEl) {
     loading = false;
     hideStopBtn();
     userStoppedGeneration = false;
-    tryUpdateMemory();
   }
 }
 
@@ -2031,7 +2038,6 @@ async function send() {
     loading = false;
     hideStopBtn();
     userStoppedGeneration = false;
-    tryUpdateMemory();
   }
 }
 
@@ -2349,7 +2355,6 @@ async function resumePending(pluginOverride) {
     }
   } finally {
     loading = false; hideStopBtn();
-    tryUpdateMemory();
   }
 }
 

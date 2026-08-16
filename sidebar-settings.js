@@ -17,6 +17,15 @@ async function generateTitle(chatId, promptText) {
 const sidebarEl    = document.getElementById("sidebar");
 const sidebarOverlay = document.getElementById("sidebar-overlay");
 
+function showToast(message) {
+  document.querySelectorAll(".sidebar-error-toast").forEach(el => el.remove());
+  const toast = document.createElement("div");
+  toast.className = "sidebar-error-toast";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 3200);
+}
+
 function openSidebar()  {
   document.body.classList.remove("sidebar-closed");
   document.body.classList.add("sidebar-open");
@@ -149,9 +158,15 @@ function renderSidebar() {
 
     item.addEventListener("click", async () => {
       if (item.classList.contains("active")) { closeSidebar(); return; }
-      await saveCurrentMessages();
-      loadChat(chat.id);
-      closeSidebar();
+      try {
+        await saveCurrentMessages();
+        await loadChat(chat.id);
+      } catch (error) {
+        console.error("[sidebar] Falha ao abrir conversa:", error);
+        if (typeof showToast === "function") showToast("Não foi possível abrir esta conversa.");
+      } finally {
+        closeSidebar();
+      }
     });
 
     let _pt;
@@ -788,34 +803,6 @@ async function loadMemoryIntoSettings() {
   }
 }
 
-async function tryUpdateMemory() {
-  const id = localStorage.getItem(ACTIVE_KEY);
-  if (!id) return;
-  const chat = _chatsMeta[id];
-  if (!chat || chat.memoryEnabled === false || !memoryEnabledGlobal) return;
-
-  if (!BoreasSync.isAuthed()) return;
-
-  const processedUpTo = chat.memoryProcessedUpTo ?? 0;
-  const newMsgs = messages.slice(processedUpTo)
-    .filter(m => m.role === "user" || m.role === "assistant")
-    .map(m => {
-      const text = typeof m.content === "string"
-        ? m.content
-        : Array.isArray(m.content)
-          ? m.content.filter(p => p.type === "text").map(p => p.text).join(" ")
-          : "";
-      return text ? { role: m.role, content: text } : null;
-    })
-    .filter(Boolean);
-
-  if (!newMsgs.length) return;
-
-  const res = await BoreasSync.memory.update(newMsgs, Date.now());
-  if (res.ok && res.data.updated) {
-    if (_chatsMeta[id]) { _chatsMeta[id].memoryProcessedUpTo = messages.length; }
-  }
-}
 function showCtxMenu(x, y, chatId, chatTitle) {
   document.getElementById("ctx-menu-el")?.remove();
   const menu = document.createElement("div");

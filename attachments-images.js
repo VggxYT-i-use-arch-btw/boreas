@@ -144,14 +144,27 @@ function copyText(text, btn) {
   }
 }
 const IMG_DB_NAME = "boreas_images";
+const IMG_DB_VERSION = 2;
+const IMAGE_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 let _imgDb = null;
+
+// Reduz a chance de o navegador remover referências de imagens do IndexedDB
+// sob pressão de armazenamento. A política de retenção do app continua sendo
+// independente desta solicitação best-effort.
+if (navigator.storage?.persist) navigator.storage.persist().catch(() => {});
 
 function openImgDb() {
   if (_imgDb) return Promise.resolve(_imgDb);
   return new Promise((res, rej) => {
-    const req = indexedDB.open(IMG_DB_NAME, 1);
-    req.onupgradeneeded = e => e.target.result.createObjectStore("images");
-    req.onsuccess = e => { _imgDb = e.target.result; res(_imgDb); };
+    const req = indexedDB.open(IMG_DB_NAME, IMG_DB_VERSION);
+    req.onupgradeneeded = e => {
+      if (!e.target.result.objectStoreNames.contains("images")) e.target.result.createObjectStore("images");
+    };
+    req.onsuccess = e => {
+      _imgDb = e.target.result;
+      cleanupExpiredImages().catch(() => {});
+      res(_imgDb);
+    };
     req.onerror   = e => rej(e.target.error);
   });
 }
@@ -159,7 +172,16 @@ async function idbSetImage(key, b64) {
   const db = await openImgDb();
   return new Promise((res, rej) => {
     const tx = db.transaction("images", "readwrite");
-    tx.objectStore("images").put(b64, key);
+    const store = tx.objectStore("images");
+    const get = store.get(key);
+    get.onsuccess = () => {
+      const previous = get.result;
+      const createdAt = typeof previous === "object" && previous?.createdAt
+        ? previous.createdAt
+        : Date.now();
+      store.put({ data: b64, createdAt, updatedAt: Date.now() }, key);
+    };
+    get.onerror = e => rej(e.target.error);
     tx.oncomplete = () => res();
     tx.onerror = e => rej(e.target.error);
   });
@@ -167,10 +189,46 @@ async function idbSetImage(key, b64) {
 async function idbGetImage(key) {
   const db = await openImgDb();
   return new Promise((res, rej) => {
-    const tx = db.transaction("images", "readonly");
-    const req = tx.objectStore("images").get(key);
-    req.onsuccess = () => res(req.result ?? null);
+    const tx = db.transaction("images", "readwrite");
+    const store = tx.objectStore("images");
+    const req = store.get(key);
+    req.onsuccess = () => {
+      const value = req.result;
+      const data = typeof value === "string" ? value : value?.data;
+      if (data) {
+        const createdAt = typeof value === "object" && value?.createdAt ? value.createdAt : Date.now();
+        store.put({ data, createdAt, updatedAt: Date.now() }, key);
+      }
+      res(data ?? null);
+    };
     req.onerror = e => rej(e.target.error);
+  });
+}
+async function cleanupExpiredImages() {
+  const db = _imgDb;
+  if (!db) return;
+  const cutoff = Date.now() - IMAGE_RETENTION_MS;
+  const expired = await new Promise((res, rej) => {
+    const tx = db.transaction("images", "readonly");
+    const store = tx.objectStore("images");
+    const req = store.openCursor();
+    const keys = [];
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if (!cursor) return res(keys);
+      const value = cursor.value;
+      if (value && typeof value === "object" && value.updatedAt && value.updatedAt < cutoff) keys.push(cursor.key);
+      cursor.continue();
+    };
+    req.onerror = e => rej(e.target.error);
+  });
+  if (!expired.length) return;
+  await new Promise((res, rej) => {
+    const tx = db.transaction("images", "readwrite");
+    const store = tx.objectStore("images");
+    expired.forEach(key => store.delete(key));
+    tx.oncomplete = () => res();
+    tx.onerror = e => rej(e.target.error);
   });
 }
 async function idbDeleteByPrefix(prefix) {

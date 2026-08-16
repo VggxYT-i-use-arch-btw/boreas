@@ -326,7 +326,7 @@ img{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .dr-card.expanded .dr-step-text{white-space:normal;overflow:visible;text-overflow:clip}
 .dr-card.expanded .dr-expand-btn svg{transform:rotate(180deg)}
 .dr-card-title{font-size:13.5px;font-weight:700;color:var(--text);margin-bottom:12px;display:flex;align-items:center;gap:8px}
-.dr-card-title svg{width:15px;height:15px;color:var(--accent-text);flex-shrink:0}
+.dr-card-title svg{display:block;width:15px;height:15px;color:var(--accent-text);flex:0 0 15px;overflow:visible}
 .dr-card-steps{display:flex;flex-direction:column;gap:9px;margin-bottom:2px}
 .dr-step{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--text-faint);transition:color .25s ease}
 .dr-step.active{color:var(--text)}
@@ -335,7 +335,7 @@ img{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .dr-step.active .dr-step-icon{border-color:var(--accent-text)}
 .dr-step.active .dr-step-icon::after{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent-text);animation:drPulse 1.1s ease-in-out infinite}
 .dr-step.done .dr-step-icon{border-color:var(--accent-text);background:var(--accent-text)}
-.dr-step.done .dr-step-icon svg{width:10px;height:10px;color:var(--bg)}
+.dr-step.done .dr-step-icon svg{display:block;width:10px;height:10px;color:var(--bg);overflow:visible}
 .dr-step-text{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 @keyframes drPulse{0%,100%{transform:scale(.85);opacity:.6}50%{transform:scale(1.15);opacity:1}}
 .dr-card-current{margin-top:12px;padding-top:11px;border-top:1px solid var(--border);font-size:11.5px;line-height:1.5;color:var(--text-dim)}
@@ -422,7 +422,6 @@ img{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 #send-btn:not(:disabled):hover{opacity:.88}
 #send-btn:not(:disabled):active{transform:scale(.92)}
 #send-btn.stop-mode{background:var(--text);cursor:pointer}
-#send-btn img{width:18px;height:18px;object-fit:contain}
 
 /* Context menus */
 .ctx-menu,.user-ctx-menu{position:fixed;z-index:200;background:var(--bg-elev);border:1px solid var(--border);border-radius:14px;overflow:hidden;box-shadow:0 12px 40px rgba(0,0,0,.85);min-width:160px;animation:fadeUp .15s ease both}

@@ -193,6 +193,15 @@ const BoreasSync = (() => {
       if (res.ok) { cacheSet("chat_" + id, res.data.chat); return res.data.chat; }
       return cacheGet("chat_" + id) ?? null;
     },
+    // Permite pintar imediatamente uma conversa já visitada, sem esperar a
+    // rede. O refresh explícito abaixo atualiza o cache em paralelo.
+    peek(id) { return cacheGet("chat_" + id) ?? null; },
+    async refresh(id) {
+      const res = await request("/chats/" + id, { retries: 1, timeoutMs: 4000 });
+      if (!res.ok) return null;
+      cacheSet("chat_" + id, res.data.chat);
+      return res.data.chat;
+    },
     async search(query) {
       const q = String(query ?? "").trim();
       if (q.length < 2) return [];
@@ -241,11 +250,6 @@ const BoreasSync = (() => {
       const res = await request("/memory", { method: "PUT", body });
       if (!res.ok && res.error !== "unauthorized") queueWrite("/memory", "PUT", body);
       return res;
-    },
-    // Background update is never queued.
-
-    async update(newMessages, lastActivity) {
-      return request("/memory/update", { method: "POST", body: { messages: newMessages, lastActivity }, retries: 1, silent: true });
     },
   };
 
