@@ -113,7 +113,9 @@
     }
     function closeForm() { formSheet.classList.remove("open"); }
 
-    var wasOnboarded = localStorage.getItem("boreas_onboarded") === "true";
+    var wasOnboarded = localStorage.getItem("boreas_onboarded") === "true"
+      && localStorage.getItem("boreas_authenticated") === "true"
+      && /^[a-f0-9]{32}$/i.test(localStorage.getItem("boreas_session_scope") || "");
     var hasName = !!localStorage.getItem("boreas_name");
     if (wasOnboarded && !hasName) {
       localStorage.removeItem("boreas_onboarded");
@@ -135,24 +137,44 @@
     });
     formSheet.addEventListener("click", function (event) { event.stopPropagation(); });
 
-    function persistAndGo(sessionId, resolvedName, use) {
+    async function persistAndGo(sessionScope, resolvedName, use) {
       var email = document.getElementById("ob-email").value.trim();
       var previousEmail = localStorage.getItem("boreas_email") || "";
       var savedName = resolvedName || localStorage.getItem("boreas_name") || email.split("@")[0];
-      if (previousEmail && previousEmail.toLowerCase() !== email.toLowerCase()) {
-        // Uma geração interrompida pertence à conta anterior; nunca tente
-        // reconectá-la depois de uma troca de conta no mesmo navegador.
-        localStorage.removeItem("boreas_pending_gen");
-      }
+      // A fila, o cache, as imagens e uma geração interrompida são estado da
+      // identidade anterior. Limpar tudo ao autenticar impede que uma troca
+      // de conta no mesmo navegador reaproveite qualquer escrita pendente.
+      await Promise.all([
+        globalThis.BoreasClearSyncQueue?.(),
+        globalThis.BoreasClearImageStore?.(),
+      ]);
+      globalThis.BoreasClearScopedCache?.();
+      globalThis.BoreasClearPendingGenerations?.();
+      ["boreas_memory_global", "boreas_font", "boreas_theme"].forEach(function (key) { localStorage.removeItem(key); });
       localStorage.setItem("boreas_onboarded", "true");
       localStorage.setItem("boreas_name", savedName);
       localStorage.setItem("boreas_use", use || localStorage.getItem("boreas_use") || "");
       localStorage.setItem("boreas_email", email);
-      localStorage.setItem("boreas_session_id", sessionId);
-      localStorage.removeItem("boreas_active_chat_v2");
+      localStorage.setItem("boreas_session_scope", String(sessionScope));
+      localStorage.setItem("boreas_authenticated", "true");
+      localStorage.removeItem("boreas_session_id");
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var oldKey = localStorage.key(i);
+        if (oldKey && (oldKey.indexOf("boreas_active_chat_") === 0 || oldKey === "boreas_active_chat_v2" || oldKey === "boreas_last_tier" || oldKey.indexOf("boreas_last_tier_") === 0 || oldKey.indexOf("boreas_last_effort_") === 0)) localStorage.removeItem(oldKey);
+      }
       if (typeof _chatsMeta !== "undefined") {
         for (var key in _chatsMeta) delete _chatsMeta[key];
       }
+      try {
+        var swReady = navigator.serviceWorker?.ready;
+        if (swReady) {
+          var registration = await Promise.race([
+            swReady,
+            new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 2000); }),
+          ]);
+          registration?.active?.postMessage({ type: "boreas-auth-scope", accountScope: String(sessionScope).toLowerCase() });
+        }
+      } catch (_) {}
       if (typeof setGreeting === "function") setGreeting();
       showChat();
     }
@@ -194,10 +216,11 @@
       fetch(backend + endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(payload),
       }).then(async function (response) {
         var data = await response.json().catch(function () { return {}; });
-        if (!response.ok || !data.sessionId) {
+        if (!response.ok || typeof data.sessionScope !== "string" || !/^[a-f0-9]{32}$/.test(data.sessionScope)) {
           if (response.status === 409) {
             setMode("login");
             setError("Essa conta já existe. Entre com sua senha.");
@@ -207,7 +230,10 @@
           submitBtn.disabled = false;
           return;
         }
-        persistAndGo(data.sessionId, data.name, data.use || use);
+        persistAndGo(data.sessionScope, data.name, data.use || use).catch(function () {
+          setError("Não foi possível preparar a sessão local. Tente novamente.");
+          submitBtn.disabled = false;
+        });
       }).catch(function () {
         setError("Sem conexão com o servidor. Tente novamente.");
         submitBtn.disabled = false;
