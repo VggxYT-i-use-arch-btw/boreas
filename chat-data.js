@@ -60,6 +60,13 @@ let chatHasMessages     = false;
 
 const ACTIVE_KEY = "boreas_active_chat_v2";
 
+function imageStorageScope() {
+  return encodeURIComponent((localStorage.getItem("boreas_email") || "unknown").trim().toLowerCase() || "unknown");
+}
+function imageStoragePrefix(chatId) {
+  return `${imageStorageScope()}:${chatId}:`;
+}
+
 let _chatsMeta = {};
 
 function loadAllChats() {
@@ -128,7 +135,7 @@ async function stripImagesForStorage(msgs, chatId) {
     for (const p of m.content) {
       if (p.type === "image_url") {
         const url = p.image_url?.url ?? "";
-        const key = `${chatId}:${i}:${imgIdx++}`;
+        const key = `${imageStoragePrefix(chatId)}${i}:${imgIdx++}`;
         if (url.startsWith("data:")) {
           try { await idbSetImage(key, url); } catch {}
         }
@@ -223,7 +230,7 @@ async function deleteChat(id) {
   }
 
   delete _chatsMeta[id];
-  try { await idbDeleteByPrefix(id + ":"); } catch {}
+  try { await idbDeleteByPrefix(imageStoragePrefix(id)); } catch {}
   const activeId = localStorage.getItem(ACTIVE_KEY);
   if (activeId === id) {
     const sorted = Object.values(_chatsMeta).sort((a, b) => (b.updatedAt ?? 0) > (a.updatedAt ?? 0) ? 1 : -1);

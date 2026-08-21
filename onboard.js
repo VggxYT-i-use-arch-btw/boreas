@@ -137,7 +137,13 @@
 
     function persistAndGo(sessionId, resolvedName, use) {
       var email = document.getElementById("ob-email").value.trim();
+      var previousEmail = localStorage.getItem("boreas_email") || "";
       var savedName = resolvedName || localStorage.getItem("boreas_name") || email.split("@")[0];
+      if (previousEmail && previousEmail.toLowerCase() !== email.toLowerCase()) {
+        // Uma geração interrompida pertence à conta anterior; nunca tente
+        // reconectá-la depois de uma troca de conta no mesmo navegador.
+        localStorage.removeItem("boreas_pending_gen");
+      }
       localStorage.setItem("boreas_onboarded", "true");
       localStorage.setItem("boreas_name", savedName);
       localStorage.setItem("boreas_use", use || localStorage.getItem("boreas_use") || "");

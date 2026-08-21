@@ -72,21 +72,28 @@ if ("serviceWorker" in navigator) {
 
 const BoreasSync = (() => {
   const SESSION_KEY = "boreas_session_id";
+  const EMAIL_KEY = "boreas_email";
 
   function sessionId() { return localStorage.getItem(SESSION_KEY) || ""; }
   function isAuthed()  { return !!sessionId(); }
+  function accountScope() {
+    return (localStorage.getItem(EMAIL_KEY) || "unknown").trim().toLowerCase() || "unknown";
+  }
   function sleep(ms)   { return new Promise(r => setTimeout(r, ms)); }
 
   // Local cache for read fallback.
+  function cacheKey(key) {
+    return "boreas_cache_" + encodeURIComponent(accountScope()) + "_" + key;
+  }
   function cacheSet(key, val) {
-    try { localStorage.setItem("boreas_cache_" + key, JSON.stringify({ v: val, t: Date.now() })); } catch {}
+    try { localStorage.setItem(cacheKey(key), JSON.stringify({ v: val, t: Date.now() })); } catch {}
   }
   function cacheGet(key) {
-    try { const raw = localStorage.getItem("boreas_cache_" + key); return raw ? JSON.parse(raw).v : undefined; }
+    try { const raw = localStorage.getItem(cacheKey(key)); return raw ? JSON.parse(raw).v : undefined; }
     catch { return undefined; }
   }
   function cacheDel(key) {
-    try { localStorage.removeItem("boreas_cache_" + key); } catch {}
+    try { localStorage.removeItem(cacheKey(key)); } catch {}
   }
 
   // Retry queue for failed writes - agora em IndexedDB (ver qdb* acima),
@@ -107,6 +114,7 @@ const BoreasSync = (() => {
         method,
         body,
         headers: { "x-session-id": sessionId() },
+        accountScope: accountScope(),
         ts: Date.now(),
       });
       // Limita o tamanho da fila de escrita no IndexedDB para evitar crescimento excessivo do armazenamento local.
@@ -129,7 +137,11 @@ const BoreasSync = (() => {
     let q;
     try { q = await qdbGetAll(); } catch { return; }
     if (!q.length) return;
+    const currentScope = accountScope();
     for (const item of q) {
+      // Nunca reenvia uma escrita criada em outra conta. A fila é compartilhada
+      // pelo navegador, portanto a sessão atual não é identidade suficiente.
+      if (item.accountScope !== currentScope) continue;
       const res = await request(item.url ?? item.path, { method: item.method, body: item.body, retries: 0, silent: true });
       if (res.ok) { try { await qdbDelete(item.key); } catch {} }
     }
