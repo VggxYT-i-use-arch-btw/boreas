@@ -1,3 +1,3 @@
 // Cloudflared
 // Tunnel
-globalThis.BOREAS_BACKEND_URL = "https://viii-statement-based-arrival.trycloudflare.com";
+globalThis.BOREAS_BACKEND_URL = "https://bath-diesel-characthers-contents.trycloudflare.com";
