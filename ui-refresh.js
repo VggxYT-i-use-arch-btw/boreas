@@ -1,5 +1,16 @@
 // Pequenas interações da camada visual nova. Não substitui os módulos de chat.
 
+// Theme is currently fixed by the application shell, but old/local data can
+// still contain arbitrary values. Keep that state constrained before any
+// future theme consumer reads it.
+(function validateStoredTheme() {
+  const allowed = new Set(["dark", "light", "system"]);
+  try {
+    const value = localStorage.getItem("boreas_theme");
+    if (value !== null && !allowed.has(value)) localStorage.removeItem("boreas_theme");
+  } catch {}
+})();
+
 (function () {
   const input = document.getElementById("msg-input");
   document.querySelectorAll("#starter-chips [data-starter]").forEach(chip => {

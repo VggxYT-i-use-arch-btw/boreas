@@ -22,6 +22,7 @@ const inputRow    = document.querySelector(".input-row");
 document.getElementById("warn-btn").addEventListener("click", () => warnOverlay.classList.remove("show"));
 
 async function regenerate(botRow, botBubble, actionsEl) {
+  if (globalThis.BoreasSessionContextStale) return;
   if (loading) return;
   const retryFromUser = botRow?._isRetryOfUser === true;
   const regenerateIndex = Number.isInteger(botRow?._msgIndex) ? botRow._msgIndex : messages.length - 1;
@@ -29,6 +30,8 @@ async function regenerate(botRow, botBubble, actionsEl) {
   if (retryFromUser && messages.at(-1)?.role !== "user") return;
   autoScroll = true; updateScrollBtn();
   if (messages.length && messages[messages.length - 1].role === "assistant") messages.pop();
+  const streamMessages = messages;
+  const streamChatId = localStorage.getItem(ACTIVE_KEY);
 
   const col = botRow.querySelector(".bot-col");
   if (col) {
@@ -46,13 +49,19 @@ async function regenerate(botRow, botBubble, actionsEl) {
   loading = true; showStopBtn();
   let reply = "", reasoning = "";
   let msgAttachments = [];
+  let attachmentBase64Bytes = 0;
+  const MAX_SSE_BUFFER = 8 * 1024 * 1024;
+  const MAX_ATTACHMENT_BASE64 = 24 * 1024 * 1024;
+  const MAX_RESPONSE_CHARS = 8 * 1024 * 1024;
   let responseBubble = null, currentBubbleText = "";
+  let pendingSourcesR = null;
+  let streamFailed = false;
+  let streamFailureMessage = "";
   const activity = {};
   let stepsCount = 0;
   let hasUsedTool = false; const extraThinkState = {};
   const DOTS = `<span style="display:inline-flex;gap:3px;margin-left:2px"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
   const CHEVRON = `<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-  const TOOL_META = { WEB_SEARCH: { icon: "🔍" }, WEB_FETCH: { icon: "🌐" }, BASH: { icon: "💻" }, DELETE: { icon: "🗑️" }, STR_REPLACE: { icon: "✏️" }, SEND_FILE: { icon: "📎" }, CREATE_FILE: { icon: "📄" }, MEMORY: { icon: "🧠" }, PREFERENCES: { icon: "⚙️" }, ASK_USER: { icon: "❓" }, CALCULATOR: { icon: "🧮" }, GRAPH: { icon: "📊" }, FORWARD_MESSAGE: { icon: "🚀" }, USE_PLUGIN: { icon: "🧩" }, IMAGE_SEARCH: { icon: "🔍" }, PRESENT_IMAGE: { icon: "🖼️" }, VIEW_CHATS: { icon: "🗂️" }, CURRENCY: { icon: "💱" } };
 
   let thinkingTimer = setTimeout(() => {
     botBubble.innerHTML = `<span style="color:rgba(120,180,220,0.4);font-size:12px;letter-spacing:0.08em">Em trabalho</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
@@ -72,16 +81,18 @@ async function regenerate(botRow, botBubble, actionsEl) {
     const res = await fetch(BACKEND_URL, {
       method: "POST",
       signal: currentAbortController.signal,
-      headers: { "Content-Type": "application/json", "x-session-id": localStorage.getItem("boreas_session_id") ?? "" },
-      body: JSON.stringify({ tier: currentTier, speed: currentSpeed, effort: currentEffort, messages, chatId: localStorage.getItem(ACTIVE_KEY), regenerate: true, regenerateIndex, name: localStorage.getItem("boreas_name") ?? "", use: localStorage.getItem("boreas_use") ?? "", chatMemoryEnabled }),
+      headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+      credentials: "include",
+      body: JSON.stringify({ tier: currentTier, speed: currentSpeed, effort: currentEffort, messages: streamMessages, chatId: streamChatId, regenerate: true, regenerateIndex, name: localStorage.getItem("boreas_name") ?? "", use: localStorage.getItem("boreas_use") ?? "", chatMemoryEnabled }),
     });
     clearTimeout(thinkingTimer);
-    if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+    if (!res.ok) { throw await boreasHttpError(res); }
 
     const reader = res.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      if (buffer.length > MAX_SSE_BUFFER) throw new Error("stream SSE grande demais");
       const lines = buffer.split("\n"); buffer = lines.pop();
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
@@ -97,6 +108,10 @@ async function regenerate(botRow, botBubble, actionsEl) {
           }
           if (chunk.type === "heartbeat") { continue; } // Ignora o evento heartbeat.
           if (chunk.type === "file" && chunk.name) {    // Anexa o arquivo na timeline.
+            if (typeof chunk.data !== "string" || chunk.data.length > MAX_ATTACHMENT_BASE64 ||
+                (attachmentBase64Bytes += chunk.data.length) > MAX_ATTACHMENT_BASE64 * 2) {
+              throw new Error("anexo recebido excede o limite de segurança");
+            }
             col.appendChild(createFileCard(chunk.name, chunk.data, chunk.mime));
             msgAttachments.push({ type: "file", name: chunk.name, data: chunk.data, mime: chunk.mime });
             scrollToBottom();
@@ -125,21 +140,24 @@ async function regenerate(botRow, botBubble, actionsEl) {
           }
 
           if (chunk.type === "error") {
+            streamFailed = true;
+            streamFailureMessage = String(chunk.message || "Falha na geração.");
             clearTimeout(thinkingTimer);
-            if (botBubble?.isConnected) botBubble.innerHTML = `Erro: ${chunk.message}`;
-            else { const errorBubble = document.createElement("div"); errorBubble.className = "bubble bot"; errorBubble.textContent = `Erro: ${chunk.message}`; col.appendChild(errorBubble); }
+            if (botBubble?.isConnected) botBubble.textContent = `Erro: ${streamFailureMessage}`;
+            else { const errorBubble = document.createElement("div"); errorBubble.className = "bubble bot"; errorBubble.textContent = `Erro: ${streamFailureMessage}`; col.appendChild(errorBubble); }
             continue;
           }
 
           if (chunk.type === "sources" && chunk.results?.length) {
-
-            if (actionsEl) actionsEl.appendChild(createSourcesButton(chunk.results));
+            pendingSourcesR = chunk.results;
+            if (actionsEl?.isConnected && !actionsEl.querySelector(".sources-btn-wrap")) {
+              actionsEl.appendChild(createSourcesButton(pendingSourcesR));
+            }
             continue;
           }
 
           if (chunk.type === "step") {
             hasUsedTool = true; closeExtraThink(extraThinkState);
-            closeThinkingSegment(activity);
 
             clearTimeout(thinkingTimer);
             stopElapsedTicker();
@@ -147,64 +165,11 @@ async function regenerate(botRow, botBubble, actionsEl) {
             col.querySelectorAll(".msg-actions").forEach(el => el.remove());
             if (botBubble?.isConnected) botBubble.remove();
             responseBubble = null; currentBubbleText = "";
-            ensureThinkingSegment(activity, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
-            ensureToolActivityCard(col, chunk, activity);
-            scrollToBottom();
-            continue;
-
-            ensureThinkingSegment(activity, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
-            const stepsDetail = activity.detail;
-            const meta = TOOL_META[chunk.tool] ?? { icon: "🔧" };
-            const rawHasOutput = chunk.output !== undefined && chunk.output !== "";
-            const hasOutput = rawHasOutput && !isBadgeOnlyTool(chunk.tool);
-            if (!stepsDetail._byId) stepsDetail._byId = {};
-
-            if (chunk.id && stepsDetail._byId[chunk.id]) {
-              const ex = stepsDetail._byId[chunk.id];
-              ex.lSpan.textContent = taskItemLabel(chunk.tool, chunk.value, rawHasOutput);
-              if (hasOutput) {
-                ex.iSpan.textContent = meta.icon;
-                ex.hdr.classList.add("expandable");
-                if (!ex.hdr.querySelector(".task-item-chevron")) {
-                  const chev = document.createElement("span"); chev.className = "task-item-chevron";
-                  chev.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-                  ex.hdr.appendChild(chev);
-                }
-                let body = ex.taskEl.querySelector(".task-item-body");
-                if (!body) {
-                  body = document.createElement("div"); body.className = "task-item-body";
-                  renderStepBody(body, chunk.tool, chunk.value, chunk.output);
-                  ex.taskEl.appendChild(body);
-                  ex.hdr.addEventListener("click", () => ex.taskEl.classList.toggle("expanded"));
-                } else {
-                  renderStepBody(body, chunk.tool, chunk.value, chunk.output);
-                }
-              }
-              scrollToBottom();
-              continue;
+            ensureToolActivityCard(col, chunk, activity, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
+            if (chunk.output !== undefined && chunk.output !== "") {
+              showInlineToolResult(col, chunk.id, chunk.tool, chunk.output, responseBubble, chunk.value);
             }
-
             stepsCount++;
-            const taskEl = document.createElement("div"); taskEl.className = "task-item";
-            const hdr = document.createElement("div");
-            hdr.className = "task-item-header" + (hasOutput ? " expandable" : "");
-            const iSpan = document.createElement("span"); iSpan.className = "task-item-icon";
-            iSpan.innerHTML = hasOutput ? meta.icon : `<span class="thinking-dot" style="background:currentColor"></span>`;
-            const lSpan = document.createElement("span"); lSpan.className = "task-item-label"; lSpan.textContent = taskItemLabel(chunk.tool, chunk.value, rawHasOutput);
-            hdr.appendChild(iSpan); hdr.appendChild(lSpan);
-            if (hasOutput) {
-              const chev = document.createElement("span"); chev.className = "task-item-chevron";
-              chev.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-              hdr.appendChild(chev);
-              const body = document.createElement("div"); body.className = "task-item-body";
-              renderStepBody(body, chunk.tool, chunk.value, chunk.output);
-              taskEl.appendChild(hdr); taskEl.appendChild(body);
-              hdr.addEventListener("click", () => taskEl.classList.toggle("expanded"));
-            } else { taskEl.appendChild(hdr); }
-            // Direto no fim da timeline - sem agrupar por tipo de tool, pra
-            // preservar a ordem cronológica real das chamadas.
-            stepsDetail.appendChild(taskEl);
-            if (chunk.id) stepsDetail._byId[chunk.id] = { taskEl, hdr, lSpan, iSpan };
             scrollToBottom();
             continue;
           }
@@ -212,6 +177,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
           const delta = chunk.choices?.[0]?.delta ?? {};
           const rd = delta.reasoning_content ?? "", cd = delta.content ?? "";
           if (rd) {
+            if (reasoning.length + String(rd).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
             reasoning += rd;
             if (botBubble?.isConnected) botBubble.remove();
             ensureThinkingSegment(activity, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
@@ -219,6 +185,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
             scrollToBottom();
           }
           if (cd) {
+            if (reply.length + String(cd).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
             if (!responseBubble) {
               if (botBubble?.isConnected) botBubble.remove();
               responseBubble = document.createElement("div"); responseBubble.className = "bubble bot"; col.appendChild(responseBubble);
@@ -234,6 +201,14 @@ async function regenerate(botRow, botBubble, actionsEl) {
     if (responseBubble) renderMarkdown(responseBubble, currentBubbleText);
     finalizeThinkingSegment(activity);
 
+    if (streamFailed) {
+      clearPendingGen();
+      currentGenId = null;
+      if (actionsEl) actionsEl.style.opacity = "";
+      return;
+    }
+
+    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
     if (reply || msgAttachments.length) {
       messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
       saveCurrentMessages();
@@ -247,6 +222,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
       const regenBtn = document.createElement("button"); regenBtn.className = "msg-action-btn msg-regenerate-btn";
       regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
       regenBtn.addEventListener("click", () => regenerate(botRow, responseBubble, actions));
+      if (pendingSourcesR?.length) actions.appendChild(createSourcesButton(pendingSourcesR));
       actions.appendChild(copyBtn); actions.appendChild(regenBtn); col.appendChild(actions);
     }
     if (responseBubble) responseBubble._rawText = currentBubbleText;
@@ -254,6 +230,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
     clearPendingGen(); currentGenId = null;
     stopNoResponseWatchdog(); stopElapsedTicker();
   } catch (e) {
+    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
     clearTimeout(thinkingTimer);
     stopNoResponseWatchdog(); stopElapsedTicker();
 
@@ -268,7 +245,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
       showSyncBanner(currentGenId);
     } else if (e.name !== "AbortError") {
       if (col) col.querySelectorAll(".thinking-pill, .thinking-inline, .tasks-pill, .tasks-detail").forEach(el => el.remove());
-      botBubble.innerHTML = `Erro: ${e.message}`;
+      if (botBubble) botBubble.textContent = `Erro: ${String(e?.message ?? "Falha na geração.")}`;
     }
     if (actionsEl) actionsEl.style.opacity = "";
   } finally {
@@ -277,4 +254,3 @@ async function regenerate(botRow, botBubble, actionsEl) {
     userStoppedGeneration = false;
   }
 }
-

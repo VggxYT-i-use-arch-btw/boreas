@@ -592,3 +592,40 @@ button:active { transform: scale(.97); }
   .file-download-card { width: 100%; height: 70px; }
   .thinking-segment-detail { padding-left: 19px; }
 }
+
+/* Widget standalone do invoke-subagents - "Answered with N subagents", com
+   shimmer por item enquanto roda e um check quando termina. Não é uma pill
+   de "Processo de pensamento"/"Ferramentas" - fica solto na timeline, igual
+   aos outros widgets de tool (câmbio, gráfico...). Persiste no histórico
+   porque usa o mesmo mecanismo de step/activity das outras tools. */
+.subagents-widget { width: min(100%, 520px); margin: 3px 0 9px; }
+.subagents-widget-header {
+  display: flex; align-items: center; gap: 9px; width: 100%; min-height: 30px;
+  padding: 4px 2px; border: 0; background: transparent; color: var(--text-dim);
+  font: 700 13px/1.2 var(--user-font); text-align: left; cursor: pointer;
+}
+.subagents-widget-icon { display: inline-flex; color: var(--accent-text); flex: 0 0 auto; }
+.subagents-widget-icon svg { display: block; }
+.subagents-widget.is-running .subagents-widget-icon svg { animation: subagentsSpin 2.2s linear infinite; }
+.subagents-widget-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subagents-widget-chevron { flex: 0 0 auto; color: var(--text-ghost); transition: transform .18s; }
+.subagents-widget.collapsed .subagents-widget-chevron { transform: rotate(-90deg); }
+.subagents-widget.collapsed .subagents-widget-list { display: none; }
+.subagents-widget-list {
+  display: flex; flex-direction: column; margin: 2px 0 0 8px; padding: 2px 0 2px 12px;
+  border-left: 1px solid rgba(255,255,255,.13);
+}
+.subagent-row { display: flex; align-items: center; gap: 8px; min-height: 27px; font-size: 12.5px; }
+.subagent-row-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.subagent-row.is-running .subagent-row-label {
+  background: linear-gradient(90deg, var(--text-ghost) 0%, var(--text-ghost) 35%, #fff 50%, var(--text-ghost) 65%, var(--text-ghost) 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: subagentsShimmer 1.8s linear infinite;
+}
+.subagent-row.is-done .subagent-row-label { color: var(--text-faint); }
+.subagent-row-check { display: grid; place-items: center; flex: 0 0 auto; width: 15px; height: 15px; color: var(--text); }
+@keyframes subagentsShimmer { 0% { background-position: 200% 0; } 100% { background-position: -50% 0; } }
+@keyframes subagentsSpin { to { transform: rotate(360deg); } }
+@media (max-width: 600px) {
+  .subagents-widget-list { margin-left: 4px; }
+}

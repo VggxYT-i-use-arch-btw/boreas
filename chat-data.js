@@ -5,12 +5,13 @@ const TIERS = {
   ultra:  { label: "Boreas 5.8 Ultra" },
   pro:    { label: "Boreas 5.8 Pro" },
   normal: { label: "Boreas 5.8" },
-  quick:  { label: "Boreas 5.7 Quick" },
   coding: { label: "Boreas Nova 5.9" },
   codingpro: { label: "Boreas Nova 5.9 Pro" },
 };
 
-const TIER_SPEEDS = { altra: "cheapest", ultra: "cheapest", pro: "cheapest", normal: "fastest", quick: "fastest", coding: "fastest", codingpro: "fastest" };
+const TIER_SPEEDS = { altra: "cheapest", ultra: "cheapest", pro: "cheapest", normal: "fastest", coding: "fastest", codingpro: "fastest" };
+let ACCOUNT_SCOPE = "";
+let LAST_TIER_KEY = "";
 
 // Pro, Altra, and Nova (coding, text-only) keep vision disabled in the UI.
 const NO_VISION_TIERS = ["pro", "altra", "coding", "codingpro"];
@@ -21,18 +22,16 @@ const EFFORT_TIERS = ["altra", "pro", "ultra", "coding", "codingpro"];
 const VALID_EFFORTS = ["default", "low", "medium", "high"];
 const EFFORT_LABELS = { default: "Padrão", low: "Baixo", medium: "Médio", high: "Alto" };
 
-let currentTier  = (localStorage.getItem("boreas_last_tier") in TIER_SPEEDS)
-  ? localStorage.getItem("boreas_last_tier")
-  : "ultra";
+let currentTier = "ultra";
 let currentSpeed = TIER_SPEEDS[currentTier];
 
 // Stores the last effort used per tier.
 
 function lastEffortFor(tier) {
-  const v = localStorage.getItem("boreas_last_effort_" + tier);
+  const v = localStorage.getItem((ACCOUNT_SCOPE ? "boreas_last_effort_" + ACCOUNT_SCOPE + "_" : "boreas_last_effort_unauthed_") + tier);
   return VALID_EFFORTS.includes(v) ? v : "default";
 }
-let currentEffort = EFFORT_TIERS.includes(currentTier) ? lastEffortFor(currentTier) : "default";
+let currentEffort = "default";
 
 // Syncs the effort row with the active tier.
 
@@ -58,31 +57,84 @@ let memoryEnabledGlobal = localStorage.getItem("boreas_memory_global") !== "fals
 let chatMemoryEnabled   = true;
 let chatHasMessages     = false;
 
-const ACTIVE_KEY = "boreas_active_chat_v2";
+let ACTIVE_KEY = "";
+
+function refreshAccountScopedState() {
+  const storedScope = String(localStorage.getItem("boreas_session_scope") || "");
+  ACCOUNT_SCOPE = /^[a-f0-9]{32}$/i.test(storedScope) ? storedScope.toLowerCase() : "";
+  LAST_TIER_KEY = ACCOUNT_SCOPE ? "boreas_last_tier_" + ACCOUNT_SCOPE : "boreas_last_tier_unauthed";
+  ACTIVE_KEY = "boreas_active_chat_v2_" + (ACCOUNT_SCOPE || "unauthed");
+  const savedTier = localStorage.getItem(LAST_TIER_KEY);
+  currentTier = Object.hasOwn(TIER_SPEEDS, savedTier) ? savedTier : "ultra";
+  currentSpeed = TIER_SPEEDS[currentTier];
+  currentEffort = EFFORT_TIERS.includes(currentTier) ? lastEffortFor(currentTier) : "default";
+  syncEffortUI();
+}
+
+globalThis.BoreasRefreshAccountScopedState = refreshAccountScopedState;
+refreshAccountScopedState();
+globalThis.BoreasSessionContextStale = false;
+
+// localStorage and the HttpOnly cookie are shared by every tab of this
+// origin. If another tab logs in or out, this tab must not keep rendering or
+// submitting its old in-memory conversation under the new cookie.
+window.addEventListener("storage", event => {
+  if (!["boreas_session_scope", "boreas_authenticated", "boreas_onboarded"].includes(event.key)) return;
+  const nextScope = String(localStorage.getItem("boreas_session_scope") || "").trim().toLowerCase();
+  const authenticated = localStorage.getItem("boreas_authenticated") === "true";
+  if (nextScope === ACCOUNT_SCOPE && (authenticated || !nextScope)) return;
+  globalThis.BoreasSessionContextStale = true;
+  try { currentAbortController?.abort(); } catch {}
+  try { localStorage.removeItem("boreas_pending_gen"); } catch {}
+  location.reload();
+});
 
 function imageStorageScope() {
-  return encodeURIComponent((localStorage.getItem("boreas_email") || "unknown").trim().toLowerCase() || "unknown");
+  const scope = String(localStorage.getItem("boreas_session_scope") || "");
+  return /^[a-f0-9]{32}$/i.test(scope) ? scope.toLowerCase() : "unauthed";
 }
 function imageStoragePrefix(chatId) {
   return `${imageStorageScope()}:${chatId}:`;
 }
 
-let _chatsMeta = {};
+const CHAT_ID_RE = /^(?!__proto__$|prototype$|constructor$)[A-Za-z0-9_-]{1,80}$/i;
+function isSafeChatId(id) { return typeof id === "string" && CHAT_ID_RE.test(id); }
+
+let _chatsMeta = Object.create(null);
+let chatsNextOffset = 0;
+let chatsHasMore = false;
+let chatsPageLoading = null;
 
 function loadAllChats() {
   return _chatsMeta;
 }
 
-async function syncChatsFromServer() {
+async function syncChatsFromServer({ reset = true } = {}) {
   if (!BoreasSync.isAuthed()) return;
-  const serverList = await BoreasSync.chats.list(); // retry + cache fallback handled inside
-  if (!Array.isArray(serverList) || !serverList.length) {
-    if (Array.isArray(serverList)) console.warn("[syncChats] Lista vazia (servidor ou cache).");
-    return;
+  if (reset) {
+    _chatsMeta = Object.create(null);
+    chatsNextOffset = 0;
+    chatsHasMore = true;
   }
-  _chatsMeta = {};
-  for (const sc of serverList) _chatsMeta[sc.id] = { ...sc, hasMessages: true };
+  const page = await BoreasSync.chats.listPage(chatsNextOffset, 50);
+  if (!page || !Array.isArray(page.chats)) return;
+  for (const sc of page.chats) {
+    if (isSafeChatId(sc?.id)) _chatsMeta[sc.id] = { ...sc, hasMessages: true };
+  }
+  chatsNextOffset = Number.isInteger(page.nextOffset) ? page.nextOffset : chatsNextOffset + page.chats.length;
+  chatsHasMore = page.hasMore === true;
 }
+
+async function loadMoreChats() {
+  if (chatsPageLoading || !chatsHasMore || !BoreasSync.isAuthed()) return;
+  chatsPageLoading = syncChatsFromServer({ reset: false })
+    .catch(error => console.warn("[syncChats] Falha ao carregar página:", error))
+    .finally(() => { chatsPageLoading = null; renderSidebar(); });
+  await chatsPageLoading;
+}
+
+globalThis.BoreasLoadMoreChats = loadMoreChats;
+globalThis.BoreasChatsHasMore = () => chatsHasMore;
 
 async function pushChatToServer(id, title, msgs, tier, speed, effort, { keepalive = false } = {}) {
   if (!BoreasSync.isAuthed()) return false;
@@ -122,11 +174,17 @@ async function pushChatToServer(id, title, msgs, tier, speed, effort, { keepaliv
 }
 
 function genChatId() {
-  return "c" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  const uuid = globalThis.crypto?.randomUUID?.();
+  if (uuid) return "c" + uuid.replace(/-/g, "");
+  const bytes = new Uint8Array(16);
+  if (!globalThis.crypto?.getRandomValues) throw new Error("Secure random generator unavailable.");
+  globalThis.crypto.getRandomValues(bytes);
+  return "c" + [...bytes].map(value => value.toString(16).padStart(2, "0")).join("");
 }
 
 async function stripImagesForStorage(msgs, chatId) {
   const result = [];
+  const expectedPrefix = imageStoragePrefix(chatId);
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i];
     if (!Array.isArray(m.content)) { result.push(m); continue; }
@@ -140,7 +198,10 @@ async function stripImagesForStorage(msgs, chatId) {
           try { await idbSetImage(key, url); } catch {}
         }
 
-        newContent.push({ type: "image_url", image_url: { url: url.startsWith("__idb:") ? url : `__idb:${key}` } });
+        const storedReference = url.startsWith("__idb:") && url.slice(6).startsWith(expectedPrefix)
+          ? url
+          : `__idb:${key}`;
+        newContent.push({ type: "image_url", image_url: { url: storedReference } });
       } else {
         newContent.push(p);
       }
@@ -150,16 +211,28 @@ async function stripImagesForStorage(msgs, chatId) {
   return result;
 }
 
-async function restoreImages(msgs) {
+async function restoreImages(msgs, chatId) {
   const result = [];
+  const expectedPrefix = imageStoragePrefix(chatId);
+  const imageKeys = [];
+  for (const m of msgs) {
+    if (!Array.isArray(m.content)) continue;
+    for (const p of m.content) {
+      const url = p?.type === "image_url" ? p.image_url?.url ?? "" : "";
+      if (url.startsWith("__idb:") && url.slice(6).startsWith(expectedPrefix)) imageKeys.push(url.slice(6));
+    }
+  }
+  const storedImages = imageKeys.length && typeof idbGetImages === "function"
+    ? await idbGetImages(imageKeys)
+    : new Map();
   for (const m of msgs) {
     if (!Array.isArray(m.content)) { result.push(m); continue; }
     const newContent = [];
     for (const p of m.content) {
       if (p.type === "image_url") {
         const url = p.image_url?.url ?? "";
-        if (url.startsWith("__idb:")) {
-          const b64 = await idbGetImage(url.slice(6));
+        if (url.startsWith("__idb:") && url.slice(6).startsWith(expectedPrefix)) {
+          const b64 = storedImages.get(url.slice(6)) ?? null;
           newContent.push(b64
             ? { type: "image_url", image_url: { url: b64 } }
             : { type: "text", text: "[imagem não disponível]" }
@@ -200,16 +273,21 @@ async function createChat(tier, speed) {
 }
 
 async function saveCurrentMessages({ keepalive = false } = {}) {
+  if (globalThis.BoreasSessionContextStale) return;
   const id = localStorage.getItem(ACTIVE_KEY);
   if (!id) return;
   const meta = _chatsMeta[id];
   if (!meta) return;
 
-  const storedMsgs = await stripImagesForStorage(messages, id);
+  const snapshot = messages;
+  const storedMsgs = await stripImagesForStorage(snapshot, id);
+  // Image persistence is asynchronous. If the user changed chats while it
+  // was running, never save the old snapshot under the new active chat.
+  if (localStorage.getItem(ACTIVE_KEY) !== id || messages !== snapshot || _chatsMeta[id] !== meta) return;
 
-  await pushChatToServer(id, meta.title, storedMsgs, currentTier, currentSpeed, currentEffort, { keepalive });
+  await pushChatToServer(id, meta.title, storedMsgs, meta.tier ?? currentTier, meta.speed ?? currentSpeed, meta.effort ?? currentEffort, { keepalive });
 
-  if (!keepalive) renderSidebar();
+  if (!keepalive && localStorage.getItem(ACTIVE_KEY) === id && messages === snapshot) renderSidebar();
 }
 
 function setChatTitle(id, title) {
@@ -255,6 +333,7 @@ function escHtml(s) {
 }
 
 async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
+  if (!isSafeChatId(id)) return;
 
   const loadGeneration = ++chatLoadGeneration;
 
@@ -274,13 +353,14 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
   if (!chat) return;
 
   localStorage.setItem(ACTIVE_KEY, id);
-  messages = await restoreImages(chat.messages ?? []);
+  messages = await restoreImages(chat.messages ?? [], id);
+  if (loadGeneration !== chatLoadGeneration) return;
 
   chatMemoryEnabled = chat.memoryEnabled !== false;
   chatHasMessages   = messages.length > 0;
   updateMemoryBtns();
 
-  if (chat.tier && TIERS[chat.tier]) {
+  if (chat.tier && Object.hasOwn(TIERS, chat.tier) && Object.hasOwn(TIER_SPEEDS, chat.tier)) {
     currentTier = chat.tier;
     currentSpeed = TIER_SPEEDS[currentTier];
     modelLabel.textContent = TIERS[currentTier].label;

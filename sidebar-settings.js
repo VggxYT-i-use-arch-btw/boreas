@@ -5,10 +5,10 @@
 
 async function generateTitle(chatId, promptText) {
   try {
-    const sessionId = localStorage.getItem("boreas_session_id") ?? "";
     const r = await fetch(BACKEND_URL + "/title", {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-session-id": sessionId },
+      headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+      credentials: "include",
       body: JSON.stringify({ prompt: promptText.slice(0, 400) }),
     });
     if (!r.ok) return;
@@ -187,7 +187,24 @@ function renderSidebar() {
 
     listEl.appendChild(item);
   }
+
+  if (!searchQuery && globalThis.BoreasChatsHasMore?.()) {
+    const sentinel = document.createElement("div");
+    sentinel.className = "sidebar-chat-load-more";
+    sentinel.textContent = "Carregando mais conversas…";
+    listEl.appendChild(sentinel);
+    requestAnimationFrame(() => {
+      if (listEl.scrollHeight <= listEl.clientHeight + 8) globalThis.BoreasLoadMoreChats?.();
+    });
+  }
 }
+
+document.getElementById("sidebar-chat-list")?.addEventListener("scroll", event => {
+  const list = event.currentTarget;
+  if (list.scrollTop + list.clientHeight >= list.scrollHeight - 120) {
+    globalThis.BoreasLoadMoreChats?.();
+  }
+}, { passive: true });
 
 function updateSidebarUser() {
   const name  = localStorage.getItem("boreas_name") ?? "";
@@ -357,14 +374,13 @@ async function renderProfileView(body) {
   const saveBtn = document.getElementById("profile-save-btn");
   let original = { name: "", use: "", preferences: "" };
 
-  const sessionId = localStorage.getItem("boreas_session_id");
   nameEl.value = localStorage.getItem("boreas_name") ?? "";
   useEl.value  = localStorage.getItem("boreas_use") ?? "";
   original.name = nameEl.value; original.use = useEl.value;
 
-  if (sessionId) {
+  if (BoreasSync.isAuthed()) {
     try {
-      const r = await fetch(BACKEND_URL + "/profile", { headers: { "x-session-id": sessionId } });
+      const r = await fetch(BACKEND_URL + "/profile", { headers: BoreasSessionHeaders(), credentials: "include" });
       if (r.ok) {
         const data = await r.json();
         nameEl.value = data.name ?? nameEl.value;
@@ -382,15 +398,16 @@ async function renderProfileView(body) {
   [nameEl, useEl, prefEl].forEach(el => el.addEventListener("input", checkDirty));
 
   saveBtn.addEventListener("click", async () => {
-    if (!sessionId) return;
+    if (!BoreasSync.isAuthed()) return;
     saveBtn.disabled = true; saveBtn.textContent = "Salvando...";
     try {
       const r = await fetch(BACKEND_URL + "/profile", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", "x-session-id": sessionId },
+        headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+        credentials: "include",
         body: JSON.stringify({ name: nameEl.value, use: useEl.value, preferences: prefEl.value }),
       });
-      if (!r.ok) throw new Error();
+      if (!r.ok) throw await boreasHttpError(r);
       const data = await r.json();
       original = { name: data.name, use: data.use, preferences: data.preferences };
       localStorage.setItem("boreas_name", data.name);
@@ -470,12 +487,11 @@ async function renderCapabilitiesView(body) {
   document.getElementById("memory-nav-row").addEventListener("click", () => openSettingsSubview("memory"));
   loadMemoryNavSub();
 
-  const sessionId = localStorage.getItem("boreas_session_id");
   const caps = ["webSearch", "artifacts", "codeExecution"];
   let current = { webSearch: true, artifacts: true, codeExecution: true };
-  if (sessionId) {
+  if (BoreasSync.isAuthed()) {
     try {
-      const r = await fetch(BACKEND_URL + "/capabilities", { headers: { "x-session-id": sessionId } });
+      const r = await fetch(BACKEND_URL + "/capabilities", { headers: BoreasSessionHeaders(), credentials: "include" });
       if (r.ok) current = (await r.json()).capabilities;
     } catch {}
   }
@@ -485,14 +501,19 @@ async function renderCapabilitiesView(body) {
     el.addEventListener("click", async () => {
       const next = !el.classList.contains("on");
       el.classList.toggle("on", next);
-      if (!sessionId) return;
+      if (!BoreasSync.isAuthed()) return;
       try {
-        await fetch(BACKEND_URL + "/capabilities", {
+        const response = await fetch(BACKEND_URL + "/capabilities", {
           method: "PUT",
-          headers: { "Content-Type": "application/json", "x-session-id": sessionId },
+          headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+          credentials: "include",
           body: JSON.stringify({ [cap]: next }),
         });
-      } catch {}
+        if (!response.ok) throw await boreasHttpError(response);
+      } catch (error) {
+        el.classList.toggle("on", !next);
+        showToast(error?.message || "Não foi possível atualizar essa permissão.");
+      }
     });
   });
 }

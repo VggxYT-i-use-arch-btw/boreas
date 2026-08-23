@@ -59,7 +59,10 @@ function setGreeting() {
 }
 
 async function resumePending(pluginOverride) {
+  if (globalThis.BoreasSessionContextStale) return;
   if (loading || !messages.length || messages[messages.length - 1].role !== "user") return;
+  const streamMessages = messages;
+  const streamChatId = localStorage.getItem(ACTIVE_KEY);
 
   document.getElementById("resume-banner")?.remove();
   showTyping();
@@ -98,20 +101,27 @@ async function resumePending(pluginOverride) {
     const res = await fetch(BACKEND_URL, {
       method: "POST",
       signal: currentAbortController.signal,
-      headers: { "Content-Type": "application/json", "x-session-id": localStorage.getItem("boreas_session_id") ?? "" },
-      body: JSON.stringify({ tier: currentTier, speed: currentSpeed, effort: currentEffort, messages, chatId: localStorage.getItem(ACTIVE_KEY), name: localStorage.getItem("boreas_name") ?? "", use: localStorage.getItem("boreas_use") ?? "", chatMemoryEnabled, plugin: pluginOverride }), // Envia chatId, nome e uso para o servidor salvar a conversa e personalizar o contexto.
+      headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+      credentials: "include",
+      body: JSON.stringify({ tier: currentTier, speed: currentSpeed, effort: currentEffort, messages: streamMessages, chatId: streamChatId, name: localStorage.getItem("boreas_name") ?? "", use: localStorage.getItem("boreas_use") ?? "", chatMemoryEnabled, plugin: pluginOverride }), // Envia chatId, nome e uso para o servidor salvar a conversa e personalizar o contexto.
     });
     clearTimeout(thinkingTimer); clearTimeout(_resumeTimeout);
-    if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+    if (!res.ok) { throw await boreasHttpError(res); }
 
     const reader = res.body.getReader(); const decoder = new TextDecoder();
     let reply = "", reasoning = "", buffer = "";
     let msgAttachments = [];
+    let attachmentBase64Bytes = 0;
+    const MAX_SSE_BUFFER = 8 * 1024 * 1024;
+    const MAX_ATTACHMENT_BASE64 = 24 * 1024 * 1024;
+    const MAX_RESPONSE_CHARS = 8 * 1024 * 1024;
     let pendingSourcesR = null;
+    let streamFailed = false;
+    let streamFailureMessage = "";
     const activity = {};
     let stepsCount = 0;
   let hasUsedTool = false; const extraThinkState = {};
-    let responseBubble = null;
+    let responseBubble = null, responseActions = null;
 
     const BRAIN_ICON = BOREAS_BRAIN_ICON;
     const CHEVRON = `<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
@@ -134,6 +144,7 @@ async function resumePending(pluginOverride) {
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      if (buffer.length > MAX_SSE_BUFFER) throw new Error("stream SSE grande demais");
       const lines = buffer.split("\n"); buffer = lines.pop();
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
@@ -149,6 +160,10 @@ async function resumePending(pluginOverride) {
             continue;
           }
           if (chunk.type === "file" && chunk.name) {
+            if (typeof chunk.data !== "string" || chunk.data.length > MAX_ATTACHMENT_BASE64 ||
+                (attachmentBase64Bytes += chunk.data.length) > MAX_ATTACHMENT_BASE64 * 2) {
+              throw new Error("anexo recebido excede o limite de segurança");
+            }
             clearTimeout(thinkingTimer);
             ensureMasterRowR();
             masterCol.appendChild(createFileCard(chunk.name, chunk.data, chunk.mime));
@@ -183,97 +198,52 @@ async function resumePending(pluginOverride) {
           }
           if (chunk.type === "step") {
             hasUsedTool = true; closeExtraThink(extraThinkState);
-            closeThinkingSegment(activity);
             clearTimeout(thinkingTimer);
             ensureMasterRowR();
             masterCol.querySelectorAll(".msg-actions").forEach(el => el.remove());
             responseBubble = null;
-            ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
-            ensureToolActivityCard(masterCol, chunk, activity);
-            scrollToBottom(); continue;
-            ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
-            const stepsDetail = activity.detail;
-            const TOOL_META_R = { WEB_SEARCH: { icon: "🔍" }, WEB_FETCH: { icon: "🌐" }, BASH: { icon: "💻" }, DELETE: { icon: "🗑️" }, STR_REPLACE: { icon: "✏️" }, SEND_FILE: { icon: "📎" }, CREATE_FILE: { icon: "📄" }, MEMORY: { icon: "🧠" }, PREFERENCES: { icon: "⚙️" }, ASK_USER: { icon: "❓" }, CALCULATOR: { icon: "🧮" }, GRAPH: { icon: "📊" }, FORWARD_MESSAGE: { icon: "🚀" }, USE_PLUGIN: { icon: "🧩" }, IMAGE_SEARCH: { icon: "🔍" }, PRESENT_IMAGE: { icon: "🖼️" }, VIEW_CHATS: { icon: "🗂️" }, CURRENCY: { icon: "💱" } };
-            const metaR = TOOL_META_R[chunk.tool] ?? { icon: "🔧" };
-            const rawHasOutputR = chunk.output !== undefined && chunk.output !== "";
-            const hasOutputR = rawHasOutputR && !isBadgeOnlyTool(chunk.tool);
-            if (!stepsDetail._byId) stepsDetail._byId = {};
-
-            if (chunk.id && stepsDetail._byId[chunk.id]) {
-              const exR = stepsDetail._byId[chunk.id];
-              exR.lSpan.textContent = taskItemLabel(chunk.tool, chunk.value, rawHasOutputR);
-              if (hasOutputR) {
-                exR.iSpan.textContent = metaR.icon;
-                exR.hdr.classList.add("expandable");
-                if (!exR.hdr.querySelector(".task-item-chevron")) {
-                  const chevR = document.createElement("span"); chevR.className = "task-item-chevron";
-                  chevR.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-                  exR.hdr.appendChild(chevR);
-                }
-                let bodyR = exR.taskEl.querySelector(".task-item-body");
-                if (!bodyR) {
-                  bodyR = document.createElement("div"); bodyR.className = "task-item-body";
-                  renderStepBody(bodyR, chunk.tool, chunk.value, chunk.output);
-                  exR.taskEl.appendChild(bodyR);
-                  exR.hdr.addEventListener("click", () => exR.taskEl.classList.toggle("expanded"));
-                } else {
-                  renderStepBody(bodyR, chunk.tool, chunk.value, chunk.output);
-                }
-                showInlineToolResult(masterCol, chunk.id, chunk.tool, chunk.output, responseBubble, chunk.value);
-              }
-              scrollToBottom(); continue;
-            }
-
-            stepsCount++;
-            const taskElR = document.createElement("div"); taskElR.className = "task-item";
-            const hdrR = document.createElement("div");
-            hdrR.className = "task-item-header" + (hasOutputR ? " expandable" : "");
-            const iSpanR = document.createElement("span"); iSpanR.className = "task-item-icon";
-            iSpanR.innerHTML = hasOutputR ? metaR.icon : `<span class="thinking-dot" style="background:currentColor"></span>`;
-            const lSpanR = document.createElement("span"); lSpanR.className = "task-item-label"; lSpanR.textContent = taskItemLabel(chunk.tool, chunk.value, rawHasOutputR);
-            hdrR.appendChild(iSpanR); hdrR.appendChild(lSpanR);
-            if (hasOutputR) {
-              const chevR = document.createElement("span"); chevR.className = "task-item-chevron";
-              chevR.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-              hdrR.appendChild(chevR);
-              const bodyR = document.createElement("div"); bodyR.className = "task-item-body";
-              renderStepBody(bodyR, chunk.tool, chunk.value, chunk.output);
-              taskElR.appendChild(hdrR); taskElR.appendChild(bodyR);
-              hdrR.addEventListener("click", () => taskElR.classList.toggle("expanded"));
+            ensureToolActivityCard(masterCol, chunk, activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
+            if (chunk.output !== undefined && chunk.output !== "") {
               showInlineToolResult(masterCol, chunk.id, chunk.tool, chunk.output, responseBubble, chunk.value);
-            } else { taskElR.appendChild(hdrR); }
-            // Direto no fim da timeline - sem agrupar por tipo de tool.
-            stepsDetail.appendChild(taskElR);
-            if (chunk.id) stepsDetail._byId[chunk.id] = { taskEl: taskElR, hdr: hdrR, lSpan: lSpanR, iSpan: iSpanR };
+            }
+            stepsCount++;
             scrollToBottom(); continue;
           }
 
           if (chunk.type === "error") {
+            streamFailed = true;
+            streamFailureMessage = String(chunk.message || "Falha na geração.");
             clearTimeout(thinkingTimer); removeTyping(); ensureMasterRowR();
             const eb = document.createElement("div"); eb.className = "bubble bot";
-            eb.textContent = `Erro: ${chunk.message}`;
+            eb.textContent = `Erro: ${streamFailureMessage}`;
             masterCol.appendChild(eb); continue;
           }
 
           if (chunk.type === "sources" && chunk.results?.length) {
             pendingSourcesR = chunk.results;
+            if (responseActions && responseActions.isConnected && !responseActions.querySelector(".sources-btn-wrap")) {
+              responseActions.appendChild(createSourcesButton(pendingSourcesR));
+            }
             continue;
           }
 
           const delta = chunk.choices?.[0]?.delta ?? {};
           const rd = delta.reasoning_content ?? "", cd = delta.content ?? "";
           if (rd) {
+            if (reasoning.length + String(rd).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
             reasoning += rd; ensureMasterRowR();
             ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
             appendThinkingSegment(activity, rd);
             scrollToBottom();
           }
           if (cd) {
+            if (reply.length + String(cd).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
             if (!responseBubble) {
               removeTyping(); ensureMasterRowR();
               responseBubble = document.createElement("div"); responseBubble.className = "bubble bot";
               masterCol.appendChild(responseBubble);
               const actions = document.createElement("div"); actions.className = "msg-actions";
+              responseActions = actions;
               const copyBtn = document.createElement("button"); copyBtn.className = "msg-action-btn";
               copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copiar`;
               // Usa _rawText para copiar o texto real da bolha sem ler o DOM completo.
@@ -296,7 +266,13 @@ async function resumePending(pluginOverride) {
     if (responseBubble) renderMarkdown(responseBubble, reply);
     finalizeThinkingSegment(activity);
     removeTyping();
+    if (streamFailed) {
+      clearPendingGen();
+      currentGenId = null;
+      return;
+    }
     if (!responseBubble && !reply && !reasoning) appendMessage("bot", "Sem resposta.");
+    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
     messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
     saveCurrentMessages();
     updateRegenerateAvailability();
@@ -304,8 +280,11 @@ async function resumePending(pluginOverride) {
     stopElapsedTicker();
 
   } catch (e) {
+    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
     clearTimeout(thinkingTimer); clearTimeout(_resumeTimeout); stopNoResponseWatchdog(); stopElapsedTicker(); removeTyping();
-    if (noGenIdTimedOut) {
+    if (e?.name === "AbortError" && userStoppedGeneration) {
+      // Stop requested by the user or by a failed prompt-response request.
+    } else if (noGenIdTimedOut) {
       if (masterRow) masterRow.remove();
       showNoResponseError(() => resumePending(pluginOverride));
     } else if (currentGenId) {

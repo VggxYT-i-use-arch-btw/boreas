@@ -38,7 +38,8 @@ document.getElementById("more-models-btn")?.addEventListener("click", e => {
 document.querySelectorAll(".model-option").forEach(opt => {
   opt.addEventListener("click", e => {
     e.stopPropagation();
-    const tier = opt.dataset.tier;
+    const tier = String(opt.dataset.tier ?? "");
+    if (!Object.hasOwn(TIERS, tier) || !Object.hasOwn(TIER_SPEEDS, tier)) return;
 
     if (NO_VISION_TIERS.includes(tier)) {
       const hasImages = messages.some(m =>
@@ -61,7 +62,7 @@ document.querySelectorAll(".model-option").forEach(opt => {
     modelPill.classList.remove("open");
     updateImageAttach();
 
-    localStorage.setItem("boreas_last_tier", currentTier);
+    localStorage.setItem(LAST_TIER_KEY, currentTier);
 
     saveCurrentMessages();
   });
@@ -77,11 +78,12 @@ document.querySelectorAll(".effort-option").forEach(btn => {
   btn.addEventListener("click", e => {
     e.stopPropagation();
     if (!EFFORT_TIERS.includes(currentTier)) return; // section is hidden anyway, but guard just in case
+    if (!VALID_EFFORTS.includes(btn.dataset.effort)) return;
     currentEffort = btn.dataset.effort;
     document.querySelectorAll(".effort-option").forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById("effort-pill-btn-value").textContent = EFFORT_LABELS[currentEffort] ?? "Padrão";
-    localStorage.setItem("boreas_last_effort_" + currentTier, currentEffort);
+    localStorage.setItem((ACCOUNT_SCOPE ? "boreas_last_effort_" + ACCOUNT_SCOPE + "_" : "boreas_last_effort_unauthed_") + currentTier, currentEffort);
     effortSection?.classList.remove("open");
     saveCurrentMessages();
   });
@@ -114,7 +116,8 @@ function updateImageAttach() {
 }
 
 document.getElementById("lock-upgrade-btn")?.addEventListener("click", () => {
-  const switchTo = document.getElementById("lock-upgrade-btn").dataset.switchTo ?? "normal";
+  const requested = document.getElementById("lock-upgrade-btn").dataset.switchTo;
+  const switchTo = Object.hasOwn(TIERS, requested) ? requested : "normal";
   currentTier = switchTo;
   currentSpeed = TIER_SPEEDS[currentTier];
   currentEffort = EFFORT_TIERS.includes(currentTier) ? lastEffortFor(currentTier) : "default";
@@ -130,6 +133,7 @@ document.getElementById("lock-upgrade-btn")?.addEventListener("click", () => {
 });
 
 function setSpeed(btn) {
+  if (!Object.values(TIER_SPEEDS).includes(btn.dataset.speed)) return;
   currentSpeed = btn.dataset.speed;
   document.querySelectorAll(".speed-opt").forEach(b => b.classList.remove("active"));
   void btn.offsetWidth;
@@ -335,16 +339,40 @@ function positionMentionPopup() {
 
 function renderMentionPopup() {
   mentionActiveIndex = 0;
-  mentionPopupInner.innerHTML = PLUGINS.map((p, i) => `
-    <div class="mention-option${p.enabled ? "" : " disabled"}${i === 0 ? " active" : ""}" data-id="${p.id}">
-      <div class="mention-option-icon">${p.icon}</div>
-      <div class="mention-option-name">${p.label}</div>
-      ${p.enabled ? "" : `<span class="mention-option-soon">Em breve</span>`}
-    </div>
-  `).join("");
+  mentionPopupInner.replaceChildren(...PLUGINS.map((p, i) => {
+    const option = document.createElement("div");
+    option.className = `mention-option${p.enabled ? "" : " disabled"}${i === 0 ? " active" : ""}`;
+    option.dataset.id = p.id;
+    const icon = document.createElement("div");
+    icon.className = "mention-option-icon";
+    icon.appendChild(createPluginIcon(p.icon));
+    const name = document.createElement("div");
+    name.className = "mention-option-name";
+    name.textContent = p.label;
+    option.append(icon, name);
+    if (!p.enabled) {
+      const soon = document.createElement("span");
+      soon.className = "mention-option-soon";
+      soon.textContent = "Em breve";
+      option.appendChild(soon);
+    }
+    return option;
+  }));
   mentionPopupInner.querySelectorAll(".mention-option").forEach(el => {
     el.addEventListener("click", () => selectPlugin(el.dataset.id));
   });
+}
+
+function createPluginIcon(rawIcon) {
+  const template = document.createElement("template");
+  template.innerHTML = typeof DOMPurify !== "undefined"
+    ? DOMPurify.sanitize(String(rawIcon ?? ""), { USE_PROFILES: { svg: true } })
+    : "";
+  const svg = template.content.firstElementChild;
+  if (svg?.tagName?.toLowerCase() === "svg") return svg;
+  const fallback = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  fallback.setAttribute("viewBox", "0 0 24 24");
+  return fallback;
 }
 
 function openMentionPopup() {
@@ -362,7 +390,10 @@ function updatePluginPill() {
   const plugin = PLUGINS.find(p => p.id === activePlugin);
   if (!plugin) { pluginPill.classList.remove("show"); return; }
   pluginPillLabel.textContent = plugin.label;
-  document.getElementById("plugin-pill-icon").outerHTML = plugin.icon.replace("<svg ", '<svg id="plugin-pill-icon" ');
+  const oldIcon = document.getElementById("plugin-pill-icon");
+  const newIcon = createPluginIcon(plugin.icon);
+  newIcon.id = "plugin-pill-icon";
+  oldIcon?.replaceWith(newIcon);
   pluginPill.classList.add("show");
 }
 
@@ -403,16 +434,31 @@ function clearActivePlugin() {
 const asheetPluginsRow  = document.getElementById("asheet-plugins-row");
 const asheetPluginsList = document.getElementById("asheet-plugins-list");
 
-asheetPluginsList.innerHTML = PLUGINS.map(p => `
-  <div class="asheet-plugin-option${p.enabled ? "" : " disabled"}" data-id="${p.id}">
-    <div class="asheet-plugin-icon">${p.icon}</div>
-    <div class="asheet-plugin-info">
-      <div class="asheet-plugin-name">${p.label}</div>
-      <div class="asheet-plugin-desc">${p.desc}</div>
-    </div>
-    ${p.enabled ? "" : `<span class="asheet-plugin-soon">Em breve</span>`}
-  </div>
-`).join("");
+asheetPluginsList.replaceChildren(...PLUGINS.map(p => {
+  const option = document.createElement("div");
+  option.className = `asheet-plugin-option${p.enabled ? "" : " disabled"}`;
+  option.dataset.id = p.id;
+  const icon = document.createElement("div");
+  icon.className = "asheet-plugin-icon";
+  icon.appendChild(createPluginIcon(p.icon));
+  const info = document.createElement("div");
+  info.className = "asheet-plugin-info";
+  const name = document.createElement("div");
+  name.className = "asheet-plugin-name";
+  name.textContent = p.label;
+  const desc = document.createElement("div");
+  desc.className = "asheet-plugin-desc";
+  desc.textContent = p.desc;
+  info.append(name, desc);
+  option.append(icon, info);
+  if (!p.enabled) {
+    const soon = document.createElement("span");
+    soon.className = "asheet-plugin-soon";
+    soon.textContent = "Em breve";
+    option.appendChild(soon);
+  }
+  return option;
+}));
 
 asheetPluginsList.querySelectorAll(".asheet-plugin-option").forEach(el => {
   el.addEventListener("click", () => {

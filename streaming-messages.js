@@ -93,13 +93,15 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
           ...(hasSteps ? steps.map(s => ({ type: "tool", ...s })) : []),
         ];
     const activityState = {};
-    sequence.forEach(item => {
+    sequence.forEach((item, idx) => {
       if (item?.type === "thinking" && String(item.text ?? "").trim()) {
         ensureThinkingSegment(activityState, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
         appendThinkingSegment(activityState, String(item.text));
       } else if (item?.type === "tool") {
-        ensureThinkingSegment(activityState, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
-        ensureToolActivityCard(col, item, activityState);
+        ensureToolActivityCard(col, item, activityState, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
+        if (item.output !== undefined && item.output !== "") {
+          showInlineToolResult(col, item.id || `hist_${idx}`, item.tool, item.output, null, item.value);
+        }
       }
     });
     finalizeThinkingSegment(activityState);
@@ -120,7 +122,10 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
   const bubble = document.createElement("div");
   bubble.className = `bubble ${role}`;
 
-  const images = Array.isArray(imageB64) ? imageB64.filter(Boolean) : (imageB64 ? [imageB64] : []);
+  const imageList = Array.isArray(imageB64) ? imageB64 : (imageB64 ? [imageB64] : []);
+  const images = imageList
+    .filter(src => typeof src === "string" && /^data:image\/(?:jpeg|png|gif|webp|avif);base64,[A-Za-z0-9+/=]+$/i.test(src) && src.length <= 24 * 1024 * 1024)
+    .slice(0, 5);
   if (images.length) {
     const grid = document.createElement("div");
     grid.className = "bubble-image-grid";
@@ -299,7 +304,12 @@ function showUserCtxMenu(x, y, userRow, text, images) {
 function editUserMessage(userRow, text, images) {
   if (loading) return;
 
-  const msgIdx = userRow._msgIndex ?? 0;
+  if (!userRow?.isConnected || !Number.isInteger(userRow._msgIndex)) return;
+  const msgIdx = userRow._msgIndex;
+  if (msgIdx < 0 || msgIdx >= messages.length || messages[msgIdx]?.role !== "user") return;
+  const allRows = [...messagesEl.querySelectorAll(".msg-row")];
+  const rowIdx = allRows.indexOf(userRow);
+  if (rowIdx < 0) return;
   messages.splice(msgIdx);
   saveCurrentMessages();
 
@@ -309,8 +319,6 @@ function editUserMessage(userRow, text, images) {
     _chatsMeta[idAtEdit].memoryProcessedUpTo = msgIdx;
   }
 
-  const allRows = [...messagesEl.querySelectorAll(".msg-row")];
-  const rowIdx = allRows.indexOf(userRow);
   for (let i = allRows.length - 1; i >= rowIdx; i--) allRows[i].remove();
 
   msgInput.value = text;
@@ -332,7 +340,11 @@ function editUserMessage(userRow, text, images) {
 async function retryFromUser(userRow) {
   if (loading || !canRetryFromUserRow(userRow)) return;
   autoScroll = true; updateScrollBtn();
-  const msgIdx = userRow._msgIndex ?? 0;
+  if (!userRow?.isConnected || !Number.isInteger(userRow._msgIndex)) return;
+  const msgIdx = userRow._msgIndex;
+  const allRows = [...messagesEl.querySelectorAll(".msg-row")];
+  const rowIdx  = allRows.indexOf(userRow);
+  if (rowIdx < 0) return;
 
   messages.splice(msgIdx + 1);
 
@@ -342,8 +354,6 @@ async function retryFromUser(userRow) {
     _chatsMeta[idAtRetry].memoryProcessedUpTo = msgIdx + 1;
   }
 
-  const allRows = [...messagesEl.querySelectorAll(".msg-row")];
-  const rowIdx  = allRows.indexOf(userRow);
   for (let i = allRows.length - 1; i > rowIdx; i--) allRows[i].remove();
 
   const BOT_IMG_SRC = "https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png";
@@ -363,4 +373,3 @@ async function retryFromUser(userRow) {
 
   await regenerate(fakeRow, fakeBubble, fakeActions);
 }
-

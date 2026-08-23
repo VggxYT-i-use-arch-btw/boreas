@@ -2,6 +2,7 @@
 // Loaded as a classic script in the exact order declared by index.html.
 
 async function send() {
+  if (globalThis.BoreasSessionContextStale) return;
   autoScroll = true; updateScrollBtn();
   const text = msgInput.value.trim();
   if ((!text && !pendingImages.length && !pendingFile) || loading) return;
@@ -51,6 +52,10 @@ async function send() {
 
   const userMsgIndex = messages.length;
   messages.push({ role: "user", content: userContent });
+  // A troca de conversa durante um stream substitui o array global. Preserve
+  // a referência para que a resposta tardia nunca seja salva no chat novo.
+  const streamMessages = messages;
+  const streamChatId = activeChatId;
   saveCurrentMessages();
 
   // Mantém o conteúdo visível do anexo no mesmo caminho de renderização da
@@ -102,30 +107,33 @@ async function send() {
     const res = await fetch(BACKEND_URL, {
       method: "POST",
       signal: currentAbortController.signal,
-      headers: { "Content-Type": "application/json", "x-session-id": localStorage.getItem("boreas_session_id") ?? "" },
-      body: JSON.stringify({ tier: currentTier, speed: currentSpeed, effort: currentEffort, messages, chatId: localStorage.getItem(ACTIVE_KEY), name: localStorage.getItem("boreas_name") ?? "", use: localStorage.getItem("boreas_use") ?? "", chatMemoryEnabled, plugin: pluginSnapshot }),
+      headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+      credentials: "include",
+      body: JSON.stringify({ tier: currentTier, speed: currentSpeed, effort: currentEffort, messages: streamMessages, chatId: streamChatId, name: localStorage.getItem("boreas_name") ?? "", use: localStorage.getItem("boreas_use") ?? "", chatMemoryEnabled, plugin: pluginSnapshot }),
     });
     clearTimeout(_fetchTimeout);
 
     if (res.status === 429) {
       removeTyping();
-      if (isFirstMessage && activeChatId) {
-        delete _chatsMeta[activeChatId];
-        BoreasSync.chats.remove(activeChatId).catch(() => {});
-        renderSidebar();
-      }
+      appendMessage("bot", "Muitas solicitações ao mesmo tempo. Aguarde alguns segundos e tente novamente.");
       loading = false; hideStopBtn(); return;
     }
-    if (!res.ok) { throw new Error(`HTTP ${res.status}`); }
+    if (!res.ok) { throw await boreasHttpError(res); }
 
     const reader = res.body.getReader(); const decoder = new TextDecoder();
     let reply = "", reasoning = "", buffer = "";
     let msgAttachments = [];
+    let attachmentBase64Bytes = 0;
+    const MAX_SSE_BUFFER = 8 * 1024 * 1024;
+    const MAX_ATTACHMENT_BASE64 = 24 * 1024 * 1024;
+    const MAX_RESPONSE_CHARS = 8 * 1024 * 1024;
     const activity = {};
     let stepsCount = 0;
   let hasUsedTool = false; const extraThinkState = {};
-    let responseBubble = null; let currentBubbleText = ""; // Guarda o texto apenas da bolha atual, separado do reply total salvo no histórico.
+    let responseBubble = null; let responseActions = null; let currentBubbleText = ""; // Guarda o texto apenas da bolha atual, separado do reply total salvo no histórico.
     let pendingSources = null;
+    let streamFailed = false;
+    let streamFailureMessage = "";
 
     const BRAIN_ICON = BOREAS_BRAIN_ICON;
     const CHEVRON = `<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
@@ -148,6 +156,7 @@ async function send() {
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
       buffer += decoder.decode(value, { stream: true });
+      if (buffer.length > MAX_SSE_BUFFER) throw new Error("stream SSE grande demais");
       const lines = buffer.split("\n"); buffer = lines.pop();
       for (const line of lines) {
         if (!line.startsWith("data: ")) continue;
@@ -167,6 +176,10 @@ async function send() {
           if (chunk.type === "heartbeat") { continue; } // keep-alive só - o "Ns" agora ticka local (startElapsedTicker)
 
           if (chunk.type === "file" && chunk.name) {
+            if (typeof chunk.data !== "string" || chunk.data.length > MAX_ATTACHMENT_BASE64 ||
+                (attachmentBase64Bytes += chunk.data.length) > MAX_ATTACHMENT_BASE64 * 2) {
+              throw new Error("anexo recebido excede o limite de segurança");
+            }
             clearTimeout(thinkingTimer);
             ensureMasterRow();
             masterCol.appendChild(createFileCard(chunk.name, chunk.data, chunk.mime));
@@ -206,75 +219,20 @@ async function send() {
 
           if (chunk.type === "step") {
             hasUsedTool = true; closeExtraThink(extraThinkState);
-            closeThinkingSegment(activity);
             clearTimeout(thinkingTimer);
             ensureMasterRow();
             masterCol.querySelectorAll(".msg-actions").forEach(el => el.remove());
+            // Fecha a bolha de texto atual quando uma tool call chega, pra
+            // não misturar texto de antes e depois da tool na mesma bolha.
             responseBubble = null; currentBubbleText = "";
-            ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
-            ensureToolActivityCard(masterCol, chunk, activity);
-            scrollToBottom();
-            continue;
-            // Fecha a bolha atual quando uma nova tool call chega, para separar trechos de texto em bolhas diferentes.
-            if (responseBubble && currentBubbleText && chunk.id && !activity.detail?._byId?.[chunk.id]) {
-              responseBubble = null; currentBubbleText = "";
-            }
-
-            ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
-            const stepsDetail = activity.detail;
-            const TOOL_META = { WEB_SEARCH: { icon: "🔍" }, WEB_FETCH: { icon: "🌐" }, BASH: { icon: "💻" }, DELETE: { icon: "🗑️" }, STR_REPLACE: { icon: "✏️" }, SEND_FILE: { icon: "📎" }, CREATE_FILE: { icon: "??" }, MEMORY: { icon: "🧠" }, PREFERENCES: { icon: "⚙️" }, ASK_USER: { icon: "❓" }, CALCULATOR: { icon: "🧮" }, GRAPH: { icon: "📊" }, FORWARD_MESSAGE: { icon: "🚀" }, USE_PLUGIN: { icon: "🧩" }, IMAGE_SEARCH: { icon: "🔍" }, PRESENT_IMAGE: { icon: "🖼️" }, VIEW_CHATS: { icon: "🗂️" }, CURRENCY: { icon: "💱" } };
-            const meta = TOOL_META[chunk.tool] ?? { icon: "🔧" };
-            const rawHasOutput2 = chunk.output !== undefined && chunk.output !== "";
-            const hasOutput = rawHasOutput2 && !isBadgeOnlyTool(chunk.tool);
-            if (!stepsDetail._byId) stepsDetail._byId = {};
-
-            if (chunk.id && stepsDetail._byId[chunk.id]) {
-              const ex = stepsDetail._byId[chunk.id];
-              ex.lSpan.textContent = taskItemLabel(chunk.tool, chunk.value, rawHasOutput2);
-              if (hasOutput) {
-                ex.iSpan.textContent = meta.icon;
-                ex.hdr.classList.add("expandable");
-                if (!ex.hdr.querySelector(".task-item-chevron")) {
-                  const chev = document.createElement("span"); chev.className = "task-item-chevron";
-                  chev.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-                  ex.hdr.appendChild(chev);
-                }
-                let body = ex.taskEl.querySelector(".task-item-body");
-                if (!body) {
-                  body = document.createElement("div"); body.className = "task-item-body";
-                  renderStepBody(body, chunk.tool, chunk.value, chunk.output);
-                  ex.taskEl.appendChild(body);
-                  ex.hdr.addEventListener("click", () => ex.taskEl.classList.toggle("expanded"));
-                } else {
-                  renderStepBody(body, chunk.tool, chunk.value, chunk.output);
-                }
-                showInlineToolResult(masterCol, chunk.id, chunk.tool, chunk.output, responseBubble, chunk.value);
-              }
-              scrollToBottom();
-              continue;
-            }
-
-            stepsCount++;
-            const taskEl = document.createElement("div"); taskEl.className = "task-item";
-            const hdr = document.createElement("div");
-            hdr.className = "task-item-header" + (hasOutput ? " expandable" : "");
-            const iSpan = document.createElement("span"); iSpan.className = "task-item-icon";
-            iSpan.innerHTML = hasOutput ? meta.icon : `<span class="thinking-dot" style="background:currentColor"></span>`;
-            const lSpan = document.createElement("span"); lSpan.className = "task-item-label"; lSpan.textContent = taskItemLabel(chunk.tool, chunk.value, rawHasOutput2);
-            hdr.appendChild(iSpan); hdr.appendChild(lSpan);
-            if (hasOutput) {
-              const chev = document.createElement("span"); chev.className = "task-item-chevron";
-              chev.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-              hdr.appendChild(chev);
-              const body = document.createElement("div"); body.className = "task-item-body";
-              renderStepBody(body, chunk.tool, chunk.value, chunk.output);
-              taskEl.appendChild(hdr); taskEl.appendChild(body);
-              hdr.addEventListener("click", () => taskEl.classList.toggle("expanded"));
+            ensureToolActivityCard(masterCol, chunk, activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
+            // Widget rico (câmbio, gráfico, calculadora, imagens...) direto
+            // na conversa, fora do colapsável - não só escondido dentro do
+            // "N passos".
+            if (chunk.output !== undefined && chunk.output !== "") {
               showInlineToolResult(masterCol, chunk.id, chunk.tool, chunk.output, responseBubble, chunk.value);
-            } else { taskEl.appendChild(hdr); }
-            // Direto no fim da timeline - sem agrupar por tipo de tool.
-            stepsDetail.appendChild(taskEl);
-            if (chunk.id) stepsDetail._byId[chunk.id] = { taskEl, hdr, lSpan, iSpan };
+            }
+            stepsCount++;
             scrollToBottom();
             continue;
           }
@@ -305,14 +263,19 @@ async function send() {
           }
 
           if (chunk.type === "error") {
+            streamFailed = true;
+            streamFailureMessage = String(chunk.message || "Falha na geração.");
             clearTimeout(thinkingTimer); removeTyping(); ensureMasterRow();
             const eb = document.createElement("div"); eb.className = "bubble bot";
-            eb.textContent = `Erro: ${chunk.message}`;
+            eb.textContent = `Erro: ${streamFailureMessage}`;
             masterCol.appendChild(eb); continue;
           }
 
           if (chunk.type === "sources" && chunk.results?.length) {
             pendingSources = chunk.results;
+            if (responseActions && responseActions.isConnected && !responseActions.querySelector(".sources-btn-wrap")) {
+              responseActions.appendChild(createSourcesButton(pendingSources));
+            }
             continue;
           }
 
@@ -320,6 +283,7 @@ async function send() {
           const reasoningDelta = delta.reasoning_content ?? "", contentDelta = delta.content ?? "";
 
           if (reasoningDelta) {
+            if (reasoning.length + String(reasoningDelta).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
             reasoning += reasoningDelta;
             ensureMasterRow();
             ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
@@ -328,6 +292,7 @@ async function send() {
           }
 
           if (contentDelta) {
+            if (reply.length + String(contentDelta).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
             if (!responseBubble) {
               removeTyping();
               ensureMasterRow();
@@ -336,6 +301,7 @@ async function send() {
               const thisBubble = responseBubble; // Captura a bolha atual antes de ela mudar depois de uma tool call.
               masterCol.appendChild(responseBubble);
               const actions = document.createElement("div"); actions.className = "msg-actions";
+              responseActions = actions;
               const copyBtn = document.createElement("button"); copyBtn.className = "msg-action-btn";
               copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copiar`;
               // Usa _rawText para copiar o texto real da bolha sem ler o DOM completo.
@@ -364,6 +330,7 @@ async function send() {
           const chunk2 = JSON.parse(raw2);
           const cd2 = chunk2.choices?.[0]?.delta?.content ?? "";
           if (cd2) {
+            if (reply.length + String(cd2).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
             reply += cd2;
             currentBubbleText += cd2;
             if (responseBubble) scheduleMarkdownRender(responseBubble, currentBubbleText);
@@ -373,6 +340,12 @@ async function send() {
     }
     if (responseBubble) renderMarkdown(responseBubble, currentBubbleText);
     finalizeThinkingSegment(activity);
+
+    if (streamFailed) {
+      clearPendingGen();
+      currentGenId = null;
+      return;
+    }
 
     removeTyping();
 
@@ -393,6 +366,7 @@ async function send() {
       appendMessage("bot", "Sem resposta.");
     }
 
+    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
     messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
     saveCurrentMessages();
     updateRegenerateAvailability();
@@ -401,6 +375,7 @@ async function send() {
     stopElapsedTicker();
 
   } catch (e) {
+    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
     clearTimeout(thinkingTimer); clearTimeout(_fetchTimeout); stopNoResponseWatchdog(); stopElapsedTicker(); removeTyping();
 
     if (noGenIdTimedOut) {
@@ -424,4 +399,3 @@ async function send() {
     userStoppedGeneration = false;
   }
 }
-

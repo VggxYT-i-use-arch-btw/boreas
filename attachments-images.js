@@ -18,7 +18,7 @@ const FILE_KIND_META = {
   other:    { color: "#b07cff", label: "Arquivo" },
 };
 
-const IMAGE_EXTS = new Set(["jpg","jpeg","png","gif","webp","bmp","svg","heic","heif","avif","tiff"]);
+const IMAGE_EXTS = new Set(["jpg","jpeg","png","gif","webp","bmp","heic","heif","avif","tiff"]);
 const AUDIO_EXTS = new Set(["mp3","wav","ogg","flac","m4a","aac","wma","opus"]);
 const VIDEO_EXTS = new Set(["mp4","mov","avi","mkv","webm","flv","wmv","m4v"]);
 const CODE_EXTS  = new Set(["js","mjs","cjs","ts","tsx","jsx","py","rb","go","java","c","cpp","h","hpp","cs","php","rs","swift","kt","lua","pl","ex","exs","erl","hs","clj","lisp","dart","vue","astro","svelte","graphql","gql","proto","tf","sh","bash","zsh","fish","sql","r"]);
@@ -100,9 +100,10 @@ function createFileCard(name, b64, mime) {
   downloadBtn.addEventListener("click", event => {
     event.stopPropagation();
     // Converte o base64 em arquivo antes de iniciar o download. O Blob evita
-    // que emojis, acentos e caracteres não latinos sejam perdidos em data URLs.
-    try {
+      // que emojis, acentos e caracteres não latinos sejam perdidos em data URLs.
+      try {
       const raw = String(b64 ?? "");
+      if (raw.length > 24 * 1024 * 1024) throw new Error("arquivo grande demais");
       const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: mime || "application/octet-stream" }));
       const link = document.createElement("a");
@@ -196,19 +197,34 @@ async function idbSetImage(key, b64) {
 async function idbGetImage(key) {
   const db = await openImgDb();
   return new Promise((res, rej) => {
-    const tx = db.transaction("images", "readwrite");
+    const tx = db.transaction("images", "readonly");
     const store = tx.objectStore("images");
     const req = store.get(key);
     req.onsuccess = () => {
       const value = req.result;
       const data = typeof value === "string" ? value : value?.data;
-      if (data) {
-        const createdAt = typeof value === "object" && value?.createdAt ? value.createdAt : Date.now();
-        store.put({ data, createdAt, updatedAt: Date.now() }, key);
-      }
       res(data ?? null);
     };
     req.onerror = e => rej(e.target.error);
+  });
+}
+async function idbGetImages(keys) {
+  const db = await openImgDb();
+  const uniqueKeys = [...new Set(keys)];
+  return new Promise((res, rej) => {
+    const tx = db.transaction("images", "readonly");
+    const store = tx.objectStore("images");
+    const values = new Map();
+    for (const key of uniqueKeys) {
+      const req = store.get(key);
+      req.onsuccess = () => {
+        const value = req.result;
+        values.set(key, typeof value === "string" ? value : value?.data ?? null);
+      };
+      req.onerror = e => rej(e.target.error);
+    }
+    tx.oncomplete = () => res(values);
+    tx.onabort = e => rej(e.target.error ?? new Error("IndexedDB transaction aborted"));
   });
 }
 async function cleanupExpiredImages() {
@@ -275,6 +291,48 @@ async function idbDeleteByPrefix(prefix) {
   });
 }
 
+async function idbDeleteWhere(predicate) {
+  const db = await openImgDb();
+  const keys = await new Promise((res, rej) => {
+    const tx = db.transaction("images", "readonly");
+    const req = tx.objectStore("images").openCursor();
+    const found = [];
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if (!cursor) { res(found); return; }
+      if (predicate(cursor.key, cursor.value)) found.push(cursor.key);
+      cursor.continue();
+    };
+    req.onerror = e => rej(e.target.error);
+  });
+  if (!keys.length) return;
+  await new Promise((res, rej) => {
+    const tx = db.transaction("images", "readwrite");
+    const store = tx.objectStore("images");
+    for (const key of keys) store.delete(key);
+    tx.oncomplete = () => res();
+    tx.onerror = e => rej(e.target.error);
+  });
+}
+
+async function clearImagesForScope(scope) {
+  const normalized = String(scope ?? "").trim().toLowerCase();
+  if (!/^[a-f0-9]{32}$/i.test(normalized)) return;
+  await idbDeleteByPrefix(normalized + ":");
+}
+
+globalThis.BoreasClearImageStore = clearImagesForScope;
+// Troca de conta e sessão expirada não têm uma identidade anterior confiável
+// para selecionar no IndexedDB. Nesses casos, apague todas as imagens locais;
+// preservar chaves antigas só criaria um reservatório de dados de outra conta.
+globalThis.BoreasClearAllImageStore = () => idbDeleteWhere(() => true);
+// Remove referências criadas antes do escopo opaco por sessão. Elas usavam
+// e-mail como parte da chave e não podem ser reatribuídas com segurança.
+globalThis.BoreasClearLegacyImageStore = () => idbDeleteWhere(key => {
+  const value = String(key ?? "");
+  return !/^[a-f0-9]{32}:[A-Za-z0-9_-]{1,80}:\d+:\d+$/i.test(value);
+});
+
 async function compressImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -287,6 +345,10 @@ async function compressImage(file) {
     }, 10000);
     img.onload = () => {
       cleanup();
+      if (!Number.isFinite(img.width) || !Number.isFinite(img.height) || img.width < 1 || img.height < 1 || img.width * img.height > 25_000_000) {
+        reject(new Error("Imagem muito grande para processar com segurança."));
+        return;
+      }
       const scale = Math.min(1, 600 / Math.max(img.width, img.height));
       const canvas = document.createElement("canvas");
       canvas.width  = Math.round(img.width  * scale);
@@ -352,6 +414,9 @@ async function addPendingImagesLocked(files) {
       // terminar (fila acima), mas isso também protege contra o próprio
       // loop empurrar além do limite se `room` tiver sido otimista.
       if (pendingImages.length >= MAX_IMAGES) break;
+      if (file.size > 15 * 1024 * 1024 || !/^image\/(?:jpeg|png|gif|webp|bmp|avif)$/i.test(file.type || "")) {
+        throw new Error("Formato de imagem não permitido ou arquivo muito grande.");
+      }
       const b64 = await compressImage(file);
       pendingImages.push(b64);
     }
@@ -410,27 +475,32 @@ cameraInput.addEventListener("change", () => handleImagePickerChange(cameraInput
 
 let webSearchCapCache = true;
 async function syncWebSearchToggle() {
-  const sessionId = localStorage.getItem("boreas_session_id");
-  if (!sessionId) { asheetSearchToggle.classList.toggle("on", webSearchCapCache); return; }
+  if (!BoreasSync.isAuthed()) { asheetSearchToggle.classList.toggle("on", webSearchCapCache); return; }
   try {
-    const r = await fetch(BACKEND_URL + "/capabilities", { headers: { "x-session-id": sessionId } });
+    const r = await fetch(BACKEND_URL + "/capabilities", { headers: BoreasSessionHeaders(), credentials: "include" });
     if (r.ok) webSearchCapCache = (await r.json()).capabilities?.webSearch !== false;
   } catch {}
   asheetSearchToggle.classList.toggle("on", webSearchCapCache);
 }
 asheetSearchToggle.addEventListener("click", async e => {
   e.stopPropagation();
+  const previous = webSearchCapCache;
   webSearchCapCache = !asheetSearchToggle.classList.contains("on");
   asheetSearchToggle.classList.toggle("on", webSearchCapCache);
-  const sessionId = localStorage.getItem("boreas_session_id");
-  if (!sessionId) return;
+  if (!BoreasSync.isAuthed()) return;
   try {
-    await fetch(BACKEND_URL + "/capabilities", {
+    const response = await fetch(BACKEND_URL + "/capabilities", {
       method: "PUT",
-      headers: { "Content-Type": "application/json", "x-session-id": sessionId },
+        headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+      credentials: "include",
       body: JSON.stringify({ webSearch: webSearchCapCache }),
     });
-  } catch {}
+    if (!response.ok) throw await boreasHttpError(response);
+  } catch (error) {
+    webSearchCapCache = previous;
+    asheetSearchToggle.classList.toggle("on", previous);
+    showToast(error?.message || "Não foi possível atualizar a busca na web.");
+  }
 });
 anyFileInput.addEventListener("change", async () => {
   const file = anyFileInput.files[0]; if (!file) return; anyFileInput.value = "";
@@ -442,12 +512,12 @@ anyFileInput.addEventListener("change", async () => {
     }
     await addPendingImages([file]);
   } else {
-    if (file.size > 30 * 1024 * 1024) { alert("Arquivo muito grande. Limite: 30 MB."); return; }
+    if (file.size > 5 * 1024 * 1024) { alert("Arquivo muito grande. Limite: 5 MB."); return; }
 
     const TEXT_EXTS = [
       ".txt",".md",".markdown",".js",".mjs",".cjs",".ts",".tsx",".jsx",
       ".py",".rb",".go",".java",".c",".cpp",".h",".hpp",".cs",".php",
-      ".css",".scss",".sass",".less",".html",".htm",".xml",".svg",
+      ".css",".scss",".sass",".less",".html",".htm",".xml",
       ".json",".yaml",".yml",".toml",".ini",".env",".csv",".tsv",
       ".sh",".bash",".zsh",".fish",".sql",".r",".swift",".kt",".rs",
       ".lua",".pl",".ex",".exs",".erl",".hs",".clj",".lisp",".dart",

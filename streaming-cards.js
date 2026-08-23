@@ -49,9 +49,14 @@ function renderDeepResearchCard(col, chunk) {
 
   const currentEl = card.querySelector(".dr-card-current");
   if (chunk.done) {
-    currentEl.innerHTML = `<span class="dr-card-done-msg">Pesquisa aprofundada concluída</span>`;
+    currentEl.textContent = "Pesquisa aprofundada concluída";
+    currentEl.className = "dr-card-current dr-card-done-msg";
   } else if (chunk.label) {
-    currentEl.innerHTML = `<b>Boreas:</b> ${(chunk.label ?? "").replace(/</g, "&lt;")}`;
+    currentEl.className = "dr-card-current";
+    currentEl.replaceChildren();
+    const label = document.createElement("b");
+    label.textContent = "Boreas:";
+    currentEl.append(label, document.createTextNode(` ${String(chunk.label).slice(0, 2000)}`));
   }
   scrollToBottom();
 }
@@ -96,10 +101,12 @@ function renderAskUserPromptCard(col, promptId, questions) {
       finish();
     }, 300000);
 
-    async function finish() {
+async function finish() {
       if (settled) return;
       settled = true;
       clearTimeout(safetyTimer);
+      let responseDelivered = false;
+      let responseStatusEl = null;
       try {
         card.classList.add("answered");
         card.innerHTML = "";
@@ -107,16 +114,38 @@ function renderAskUserPromptCard(col, promptId, questions) {
         done.className = "aup-done";
         done.textContent = "Respondido";
         card.appendChild(done);
+        responseStatusEl = done;
       } catch (e) { console.error("[aup] falha ao fechar o card:", e); }
-      const sessionId = localStorage.getItem("boreas_session_id") || "";
       try {
-        await fetch(BACKEND_URL + "/prompt-response/" + promptId, {
+        const safePromptId = encodeURIComponent(String(promptId ?? ""));
+        if (!safePromptId || safePromptId === "%22%22") throw new Error("prompt inválido");
+        const response = await fetch(BACKEND_URL + "/prompt-response/" + safePromptId, {
           method: "POST",
-          headers: { "Content-Type": "application/json", "x-session-id": sessionId },
+          headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+          credentials: "include",
           body: JSON.stringify({ answers }),
         });
+        if (!response.ok) throw await boreasHttpError(response);
+        responseDelivered = true;
       } catch (e) { console.error("[aup] falha ao enviar resposta:", e); }
-      resolve(answers);
+      if (!responseDelivered) {
+        if (responseStatusEl) {
+          responseStatusEl.textContent = "Falha ao enviar";
+          responseStatusEl.classList.add("error");
+        }
+        userStoppedGeneration = true;
+        try { currentAbortController?.abort(); } catch {}
+        if (currentGenId) {
+          fetch(BACKEND_URL + "/chat/stop", {
+            method: "POST",
+            headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+            credentials: "include",
+            body: JSON.stringify({ genId: currentGenId }),
+            keepalive: true,
+          }).catch(() => {});
+        }
+      }
+      resolve(responseDelivered ? answers : null);
     }
 
     function advance() {
@@ -300,39 +329,114 @@ function closeExtraThink(state) { state.el = null; state.outEl = null; state.tex
 // da montagem para manter o mesmo desenho em todos os fluxos.
 const BOREAS_BRAIN_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5a3 3 0 1 0-5.997.125A4 4 0 0 0 3.5 9.75a4 4 0 0 0 1.03 6.79A4 4 0 0 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125A4 4 0 0 1 20.5 9.75a4 4 0 0 1-1.03 6.79A4 4 0 0 1 12 18Z"/><path d="M12 5v13"/><path d="M9 7.5a4 4 0 0 0 3 3.5"/><path d="M15 7.5a4 4 0 0 1-3 3.5"/><path d="M9 15a4 4 0 0 1 3-3.5"/><path d="M15 15a4 4 0 0 0-3-3.5"/></svg>`;
 
-// Novo renderer: reasoning e tools são segmentos independentes. A pill de
-// pensamento nunca recebe task-items; cada tool fica em um cartão inline.
-function ensureThinkingSegment(state, mountFn) {
-  if (state.pill) return state;
-  state.pill = document.createElement("button");
-  state.pill.innerHTML = `<span class="thinking-segment-icon">${BOREAS_BRAIN_ICON}</span><span>Processo de pensamento</span><span class="thinking-segment-status">Pensando</span><svg class="thinking-segment-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-  state.pill.className = "thinking-segment-pill";
-  const brainIcon = state.pill.querySelector(".thinking-segment-icon");
-  if (brainIcon) brainIcon.innerHTML = BOREAS_BRAIN_ICON;
-  state.detail = document.createElement("div"); state.detail.className = "thinking-segment-detail";
-  state.textEl = document.createElement("div"); state.textEl.className = "thinking-segment-text";
-  state.itemsEl = document.createElement("div"); state.itemsEl.className = "thinking-segment-items";
-  state.detail.appendChild(state.textEl);
-  state.detail.appendChild(state.itemsEl);
-  state.pill.addEventListener("click", () => { state.pill.classList.toggle("expanded"); state.detail.classList.toggle("visible"); });
-  mountFn(state.pill, state.detail);
-  return state;
+// Renderer por rajada: cada troca de "tipo" (raciocínio <-> tool calls)
+// fecha o segmento atual e abre um novo colapsável, na ordem em que
+// aconteceu - em vez de uma única timeline acumulando tudo o que rolou
+// na resposta inteira. `state` (o "activity") guarda a lista de segmentos
+// já fechados (`state.segments`) e o segmento em aberto (`state.cur`).
+const TOOL_GROUP_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a2.1 2.1 0 0 0 3 3l6-6a4 4 0 0 0 5.4-5.4l-2.4 2.4-3-3Z"></path></svg>`;
+function BOREAS_createSegmentShell(kind) {
+  const pill = document.createElement("button");
+  pill.className = "thinking-segment-pill" + (kind === "tool" ? " tool-segment-pill" : "");
+  const icon = kind === "tool" ? TOOL_GROUP_ICON : BOREAS_BRAIN_ICON;
+  const title = kind === "tool" ? "Ferramentas" : "Processo de pensamento";
+  const initialStatus = kind === "tool" ? "Executando" : "Pensando";
+  pill.innerHTML = `<span class="thinking-segment-icon">${icon}</span><span>${title}</span><span class="thinking-segment-status">${initialStatus}</span><svg class="thinking-segment-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+  const detail = document.createElement("div"); detail.className = "thinking-segment-detail";
+  const seg = { kind, pill, detail, stepCount: 0 };
+  if (kind === "tool") {
+    seg.itemsEl = document.createElement("div"); seg.itemsEl.className = "thinking-segment-items";
+    detail.appendChild(seg.itemsEl);
+  } else {
+    seg.textEl = document.createElement("div"); seg.textEl.className = "thinking-segment-text";
+    seg.text = "";
+    detail.appendChild(seg.textEl);
+  }
+  pill.addEventListener("click", () => { pill.classList.toggle("expanded"); detail.classList.toggle("visible"); });
+  return seg;
 }
+function BOREAS_finalizeSegment(seg) {
+  if (!seg?.pill) return;
+  seg.pill.classList.add("is-complete");
+  const status = seg.pill.querySelector(".thinking-segment-status");
+  if (!status) return;
+  status.textContent = seg.kind === "tool" ? `${seg.stepCount || 0} ${seg.stepCount === 1 ? "passo" : "passos"}` : "Concluído";
+}
+// Retorna o segmento aberto do tipo pedido - se o segmento aberto atual é de
+// outro tipo, fecha ele e monta um novo colapsável (nova rajada).
+function BOREAS_getSegment(state, kind, mountFn) {
+  if (state.cur && state.cur.kind === kind) return state.cur;
+  if (state.cur) BOREAS_finalizeSegment(state.cur);
+  const seg = BOREAS_createSegmentShell(kind);
+  mountFn(seg.pill, seg.detail);
+  (state.segments ?? (state.segments = [])).push(seg);
+  state.cur = seg;
+  return seg;
+}
+function ensureThinkingSegment(state, mountFn) { return BOREAS_getSegment(state, "thinking", mountFn); }
+function ensureToolSegment(state, mountFn) { return BOREAS_getSegment(state, "tool", mountFn); }
 function appendThinkingSegment(state, delta) {
-  state.text = (state.text ?? "") + delta;
-  if (state.textEl) state.textEl.textContent = state.text;
+  const seg = state?.cur?.kind === "thinking" ? state.cur : null;
+  if (!seg) return;
+  seg.text += delta;
+  seg.textEl.textContent = seg.text;
 }
 function finalizeThinkingSegment(state) {
-  if (!state?.pill) return;
-  state.pill.classList.add("is-complete");
-  const status = state.pill.querySelector(".thinking-segment-status");
-  if (status) status.textContent = state.toolCount ? `${state.toolCount} passos` : "Concluído";
+  if (state?.cur) BOREAS_finalizeSegment(state.cur);
 }
-function closeThinkingSegment(state) {
-  // Mantém uma única timeline por resposta. Antes cada rodada de tool fechava
-  // o segmento e criava outro cartão, o que deixava a interface fragmentada.
-  // O resumo só é finalizado quando o stream inteiro termina.
-  if (state) state.hasTool = true;
+// Fecha o segmento aberto (se houver) e reseta o ponteiro, sem abrir um novo -
+// usado antes de widgets standalone (ex. sub-agentes) que não pertencem a
+// nenhuma pill "Processo de pensamento"/"Ferramentas". Sem isso, um raciocínio
+// que retoma depois do widget continuaria acumulando no segmento de ANTES dele.
+function closeActivitySegment(state) {
+  if (state?.cur) { BOREAS_finalizeSegment(state.cur); state.cur = null; }
+}
+// Legado: mantido só pra não quebrar call sites antigos que ainda chamam
+// isso antes de um "step" chegar. A troca de segmento agora é automática
+// (feita por ensureToolSegment/ensureThinkingSegment conforme o tipo muda).
+function closeThinkingSegment() {}
+
+// Widget standalone (fora de qualquer pill colapsável) pro invoke-subagents:
+// mostra "Answered with N subagents" com um item por agente, cada um com
+// shimmer enquanto roda e um check quando termina. Atualiza ao vivo porque
+// step.id é o mesmo call id do começo ao fim - só troca o innerHTML.
+const SUBAGENTS_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><g fill="currentColor"><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(60 12 12)"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(120 12 12)"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(180 12 12)"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(240 12 12)"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(300 12 12)"></ellipse></g></svg>`;
+const SUBAGENT_CHECK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
+function ensureSubagentsWidget(container, step) {
+  if (!container || !step?.id) return null;
+  let data;
+  try { data = JSON.parse(step.value || "{}"); } catch { data = {}; }
+  const agents = Array.isArray(data.agents) ? data.agents : [];
+  if (!container._subagentWidgets) container._subagentWidgets = new Map();
+  let widget = container._subagentWidgets.get(step.id);
+  if (!widget) {
+    widget = document.createElement("div"); widget.className = "subagents-widget";
+    widget.innerHTML = `<button type="button" class="subagents-widget-header"><span class="subagents-widget-icon">${SUBAGENTS_ICON}</span><span class="subagents-widget-title"></span><svg class="subagents-widget-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button><div class="subagents-widget-list"></div>`;
+    widget.querySelector(".subagents-widget-header").addEventListener("click", () => widget.classList.toggle("collapsed"));
+    container._subagentWidgets.set(step.id, widget);
+    container.appendChild(widget);
+  }
+  const total = agents.length;
+  const doneCount = agents.filter(a => a?.status === "done").length;
+  const allDone = total > 0 && doneCount === total;
+  widget.classList.toggle("all-done", allDone);
+  widget.classList.toggle("is-running", !allDone);
+  const titleEl = widget.querySelector(".subagents-widget-title");
+  titleEl.textContent = total
+    ? `Answered with ${total} subagent${total === 1 ? "" : "s"}`
+    : (data.error ? "Sub-agents failed" : "Starting subagents…");
+  const list = widget.querySelector(".subagents-widget-list");
+  list.innerHTML = "";
+  agents.forEach(a => {
+    const item = document.createElement("div");
+    item.className = "subagent-row " + (a?.status === "done" ? "is-done" : "is-running");
+    const label = document.createElement("span"); label.className = "subagent-row-label"; label.textContent = String(a?.label ?? "");
+    const mark = document.createElement("span"); mark.className = "subagent-row-check";
+    if (a?.status === "done") mark.innerHTML = SUBAGENT_CHECK_ICON;
+    item.appendChild(label); item.appendChild(mark);
+    list.appendChild(item);
+  });
+  return widget;
 }
 
 const TOOL_ACTIVITY_LABELS = {
@@ -377,20 +481,45 @@ function updateToolActivityCard(card, tool, value, output) {
   const body = card._body;
   body.innerHTML = "";
   if (!done) return;
-  const visual = buildToolResultVisual(tool, output, value);
-  if (visual) body.appendChild(visual);
-  else {
-    const out = document.createElement("pre"); out.className = "tool-activity-output";
-    out.textContent = String(output ?? "").slice(0, 5000); body.appendChild(out);
-  }
+  // O widget rico (câmbio, gráfico, imagens...) aparece direto na conversa
+  // via showInlineToolResult - aqui, dentro do card colapsado, fica só o
+  // output cru, pra quem quiser conferir o que a tool devolveu.
+  const out = document.createElement("pre"); out.className = "tool-activity-output";
+  out.textContent = String(output ?? "").slice(0, 5000); body.appendChild(out);
   card.classList.toggle("has-details", !!body.childNodes.length);
 }
-function ensureToolActivityCard(container, step) {
+const MAX_TOOL_ACTIVITY_CARDS = 256;
+function pruneToolActivityCards(host) {
+  const cards = host?._toolActivityCards;
+  if (!cards) return;
+  for (const [id, card] of cards) {
+    if (!card.isConnected || card.classList.contains("is-done")) cards.delete(id);
+  }
+  while (cards.size > MAX_TOOL_ACTIVITY_CARDS) {
+    const oldest = cards.keys().next().value;
+    if (oldest === undefined) break;
+    const card = cards.get(oldest);
+    cards.delete(oldest);
+    if (card?.isConnected && !card.classList.contains("is-done")) {
+      card.classList.add("is-done");
+      card.querySelector(".tool-activity-status").textContent = "Interrompido";
+    }
+  }
+}
+function ensureToolActivityCard(container, step, activityState, mountFn) {
   if (!container || !step) return null;
-  const activityState = arguments[2] ?? null;
-  const host = activityState?.itemsEl ?? container;
+  if (step.tool === "INVOKE_SUBAGENTS") {
+    // Widget standalone: não faz parte da pill "Ferramentas" - fecha
+    // qualquer segmento aberto (sem abrir um novo) e renderiza direto na
+    // timeline, como os widgets de showInlineToolResult.
+    closeActivitySegment(activityState);
+    return ensureSubagentsWidget(container, step);
+  }
+  const seg = ensureToolSegment(activityState ?? {}, mountFn ?? (() => {}));
+  const host = seg?.itemsEl ?? container;
   const id = step.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
   if (!host._toolActivityCards) host._toolActivityCards = new Map();
+  pruneToolActivityCards(host);
   let card = host._toolActivityCards.get(id);
   if (!card) {
     card = document.createElement("div"); card.className = "tool-activity-card";
@@ -399,9 +528,14 @@ function ensureToolActivityCard(container, step) {
     card.querySelector(".tool-activity-icon").innerHTML = toolActivityIconSvg(step.tool);
     card.querySelector(".tool-activity-header").addEventListener("click", () => card.classList.toggle("expanded"));
     host._toolActivityCards.set(id, card); host.appendChild(card);
-    if (activityState) activityState.toolCount = (activityState.toolCount ?? 0) + 1;
+    if (seg) seg.stepCount = (seg.stepCount ?? 0) + 1;
   }
   updateToolActivityCard(card, step.tool, step.value, step.output);
+  if (step.output !== undefined) {
+    queueMicrotask(() => {
+      if (host._toolActivityCards?.get(id) === card) host._toolActivityCards.delete(id);
+    });
+  }
   return card;
 }
 
@@ -443,9 +577,11 @@ function renderAgenticLoopCard(col, chunk) {
     const icon = stepEl.querySelector(".dr-step-icon");
     const textEl = stepEl.querySelector(".dr-step-text");
     const planLine = card._plan?.[n - 1];
-    textEl.innerHTML = planLine
-      ? `<b>${AL_STAGE_TITLES[n - 1]}:</b> ${String(planLine).replace(/</g, "&lt;")}`
-      : `<b>${AL_STAGE_TITLES[n - 1]}</b>`;
+    textEl.replaceChildren();
+    const stageLabel = document.createElement("b");
+    stageLabel.textContent = AL_STAGE_TITLES[n - 1] + (planLine ? ":" : "");
+    textEl.appendChild(stageLabel);
+    if (planLine) textEl.appendChild(document.createTextNode(` ${String(planLine).slice(0, 500)}`));
     stepEl.classList.remove("active", "done");
     if (n < activeStage || (chunk.done && chunk.converged !== false)) { stepEl.classList.add("done"); icon.innerHTML = DR_CHECK_ICON; }
     else if (n === activeStage && !chunk.done) { stepEl.classList.add("active"); icon.innerHTML = ""; }
@@ -454,11 +590,20 @@ function renderAgenticLoopCard(col, chunk) {
 
   const currentEl = card.querySelector(".dr-card-current");
   if (chunk.done && chunk.converged === false) {
-    currentEl.innerHTML = `<span class="dr-card-done-msg" style="color:#e08a8a">Não convergiu a tempo - parou sem atingir 100%.</span>`;
+    currentEl.textContent = "Não convergiu a tempo - parou sem atingir 100%.";
+    currentEl.className = "dr-card-current dr-card-done-msg";
+    currentEl.style.color = "#e08a8a";
   } else if (chunk.done) {
-    currentEl.innerHTML = `<span class="dr-card-done-msg">Objetivo alcançado</span>`;
+    currentEl.textContent = "Objetivo alcançado";
+    currentEl.className = "dr-card-current dr-card-done-msg";
+    currentEl.style.color = "";
   } else if (chunk.summary) {
-    currentEl.innerHTML = `<b>Boreas:</b> ${(chunk.summary ?? "").replace(/</g, "&lt;")}`;
+    currentEl.className = "dr-card-current";
+    currentEl.style.color = "";
+    currentEl.replaceChildren();
+    const summaryLabel = document.createElement("b");
+    summaryLabel.textContent = "Boreas:";
+    currentEl.append(summaryLabel, document.createTextNode(` ${String(chunk.summary).slice(0, 2000)}`));
   }
 
   // Segurança: o card é a fonte de verdade de "terminou ou não" - se o
@@ -469,4 +614,3 @@ function renderAgenticLoopCard(col, chunk) {
 
   scrollToBottom();
 }
-

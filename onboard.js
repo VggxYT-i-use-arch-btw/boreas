@@ -121,7 +121,36 @@
       localStorage.removeItem("boreas_onboarded");
       wasOnboarded = false;
     }
-    if (wasOnboarded) { showChat(); return; }
+    if (wasOnboarded) {
+      // A flag local não autentica ninguém; confirma a sessão no servidor.
+      // O cookie continua inacessível ao JavaScript.
+      fetch((globalThis.BOREAS_BACKEND_URL || "") + "/session", {
+        credentials: "include",
+        cache: "no-store",
+      }).then(async function (response) {
+        var data = await response.json().catch(function () { return {}; });
+        var storedScope = localStorage.getItem("boreas_session_scope") || "";
+        if (response.ok && typeof data.sessionScope === "string" && data.sessionScope === storedScope) {
+          showChat();
+          return;
+        }
+        if (response.ok) {
+          // Another tab changed the shared HttpOnly cookie. Do not keep the
+          // old tab's DOM/state under the newly authenticated session.
+          location.reload();
+          return;
+        }
+        ["boreas_authenticated", "boreas_onboarded", "boreas_session_scope"].forEach(function (key) {
+          localStorage.removeItem(key);
+        });
+        showOnboard();
+      }).catch(function () {
+        // Without a server confirmation, showing cached account data could
+        // expose it after a session change or expiry. Require revalidation.
+        showOnboard();
+      });
+      return;
+    }
 
     setMode("login");
     document.getElementById("ob-login-btn").addEventListener("click", function () { openForm("login"); });
@@ -140,30 +169,38 @@
     async function persistAndGo(sessionScope, resolvedName, use) {
       var email = document.getElementById("ob-email").value.trim();
       var previousEmail = localStorage.getItem("boreas_email") || "";
+      var previousSessionScope = localStorage.getItem("boreas_session_scope") || "";
       var savedName = resolvedName || localStorage.getItem("boreas_name") || email.split("@")[0];
       // A fila, o cache, as imagens e uma geração interrompida são estado da
       // identidade anterior. Limpar tudo ao autenticar impede que uma troca
       // de conta no mesmo navegador reaproveite qualquer escrita pendente.
       await Promise.all([
         globalThis.BoreasClearSyncQueue?.(),
-        globalThis.BoreasClearImageStore?.(),
+        globalThis.BoreasClearImageStore?.(previousSessionScope),
+        globalThis.BoreasClearAllImageStore?.(),
+        globalThis.BoreasClearLegacyImageStore?.(),
       ]);
-      globalThis.BoreasClearScopedCache?.();
+      globalThis.BoreasClearScopedCache?.(previousSessionScope);
+      globalThis.BoreasClearAllScopedCaches?.();
       globalThis.BoreasClearPendingGenerations?.();
       ["boreas_memory_global", "boreas_font", "boreas_theme"].forEach(function (key) { localStorage.removeItem(key); });
       localStorage.setItem("boreas_onboarded", "true");
       localStorage.setItem("boreas_name", savedName);
-      localStorage.setItem("boreas_use", use || localStorage.getItem("boreas_use") || "");
+      localStorage.setItem("boreas_use", typeof use === "string" ? use : "");
       localStorage.setItem("boreas_email", email);
       localStorage.setItem("boreas_session_scope", String(sessionScope));
       localStorage.setItem("boreas_authenticated", "true");
-      localStorage.removeItem("boreas_session_id");
+      await globalThis.BoreasSetAuthScope?.(String(sessionScope));
       for (var i = localStorage.length - 1; i >= 0; i--) {
         var oldKey = localStorage.key(i);
         if (oldKey && (oldKey.indexOf("boreas_active_chat_") === 0 || oldKey === "boreas_active_chat_v2" || oldKey === "boreas_last_tier" || oldKey.indexOf("boreas_last_tier_") === 0 || oldKey.indexOf("boreas_last_effort_") === 0)) localStorage.removeItem(oldKey);
       }
+      // chat-data.js is loaded before login and may have initialized its
+      // account-scoped keys for the unauthenticated shell. Rebind them only
+      // after the new identity is committed to localStorage.
+      globalThis.BoreasRefreshAccountScopedState?.();
       if (typeof _chatsMeta !== "undefined") {
-        for (var key in _chatsMeta) delete _chatsMeta[key];
+        _chatsMeta = Object.create(null);
       }
       try {
         var swReady = navigator.serviceWorker?.ready;
@@ -172,11 +209,15 @@
             swReady,
             new Promise(function (resolve) { setTimeout(function () { resolve(null); }, 2000); }),
           ]);
-          registration?.active?.postMessage({ type: "boreas-auth-scope", accountScope: String(sessionScope).toLowerCase() });
+          registration?.active?.postMessage({ type: "boreas-auth-scope", accountScope: String(sessionScope) });
         }
       } catch (_) {}
-      if (typeof setGreeting === "function") setGreeting();
-      showChat();
+      // This page may have been holding a draft/chat from the previous
+      // identity (for example after an expired session, without a full
+      // logout). Reinitializing the document makes the authenticated boot
+      // path rebuild the UI and remote chat index from scratch instead of
+      // briefly exposing that old DOM/state to the newly logged-in account.
+      location.reload();
     }
 
     function submitAuth() {
@@ -230,7 +271,7 @@
           submitBtn.disabled = false;
           return;
         }
-        persistAndGo(data.sessionScope, data.name, data.use || use).catch(function () {
+        persistAndGo(data.sessionScope, data.name, typeof data.use === "string" ? data.use : (currentMode === "register" ? use : "")).catch(function () {
           setError("Não foi possível preparar a sessão local. Tente novamente.");
           submitBtn.disabled = false;
         });

@@ -8,11 +8,41 @@ let currentAbortController = null;
 let currentGenId = null;
 let userStoppedGeneration = false; // true only while an explicit Parar click's abort is in flight
 const PENDING_GEN_KEY = "boreas_pending_gen";
+function pendingAccountScope() {
+  const scope = String(localStorage.getItem("boreas_session_scope") || "").trim().toLowerCase();
+  return /^[a-f0-9]{32}$/.test(scope) ? scope : "";
+}
+function validGenerationId(id) {
+  return typeof id === "string" && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(id);
+}
+
+async function boreasHttpError(response) {
+  let message = `HTTP ${response.status}`;
+  try {
+    const data = await response.clone().json();
+    if (typeof data?.error === "string" && data.error.trim()) message = data.error.trim();
+  } catch {}
+  const error = new Error(message);
+  error.status = response.status;
+  if (response.status === 401) document.dispatchEvent(new CustomEvent("boreas:session-expired"));
+  return error;
+}
+function validPendingChatId(id) {
+  return typeof id === "string" && /^(?!__proto__$|prototype$|constructor$)[A-Za-z0-9_-]{1,80}$/i.test(id);
+}
 function savePendingGen(genId, chatId) {
-  try { localStorage.setItem(PENDING_GEN_KEY, JSON.stringify({ genId, chatId, ts: Date.now() })); } catch {}
+  const accountScope = pendingAccountScope();
+  if (!validGenerationId(genId) || !validPendingChatId(chatId) || !accountScope) return;
+  try { localStorage.setItem(PENDING_GEN_KEY, JSON.stringify({ genId, chatId, accountScope, ts: Date.now() })); } catch {}
 }
 function getPendingGen() {
-  try { return JSON.parse(localStorage.getItem(PENDING_GEN_KEY)); } catch { return null; }
+  try {
+    const pending = JSON.parse(localStorage.getItem(PENDING_GEN_KEY));
+    return pending && validGenerationId(pending.genId) && validPendingChatId(pending.chatId)
+      && pending.accountScope === pendingAccountScope()
+      ? pending
+      : null;
+  } catch { return null; }
 }
 function clearPendingGen() {
   try { localStorage.removeItem(PENDING_GEN_KEY); } catch {}
@@ -22,6 +52,7 @@ let syncInFlight = null;
 let syncInFlightGenId = null;
 let syncRetryTimer = null;
 let syncRetryAttempt = 0;
+let syncAbortController = null;
 
 function schedulePendingSync(genId) {
   if (syncRetryTimer || !genId || navigator.onLine === false) return;
@@ -78,6 +109,11 @@ async function syncGenerationOnce(genId) {
   const activity = {};
   let sawDone = false;
   let syncMissing = false;
+  let syncFailed = false;
+  let syncFailureMessage = "";
+  const controller = new AbortController();
+  syncAbortController = controller;
+  currentAbortController = controller;
   function ensureRow() {
     if (!masterRow) {
       removeTyping();
@@ -92,15 +128,24 @@ async function syncGenerationOnce(genId) {
   }
 
   try {
-    const res = await fetch(`${BACKEND_URL}/chat/sync/${genId}`, {
-      headers: { "x-session-id": localStorage.getItem("boreas_session_id") ?? "" },
+    if (!validGenerationId(genId)) return false;
+    const res = await fetch(`${BACKEND_URL}/chat/sync/${encodeURIComponent(genId)}`, {
+      headers: BoreasSessionHeaders(),
       credentials: "include",
+      signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) throw await boreasHttpError(res);
 
     const reader = res.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+    const MAX_SYNC_SSE_BUFFER = 8 * 1024 * 1024;
+    const MAX_SYNC_RESPONSE_CHARS = 8 * 1024 * 1024;
+    const syncByteEncoder = new TextEncoder();
     while (true) {
       const { done, value } = await reader.read(); if (done) break;
+      if (!value || value.byteLength > MAX_SYNC_SSE_BUFFER - syncByteEncoder.encode(buffer).byteLength) {
+        await reader.cancel().catch(() => {});
+        throw new Error("Resposta de sincronização excedeu o limite de 8 MB");
+      }
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n"); buffer = lines.pop();
       for (const line of lines) {
@@ -112,6 +157,11 @@ async function syncGenerationOnce(genId) {
           syncMissing = true;
           continue;
         }
+        if (chunk.type === "sync_truncated") {
+          syncFailed = true;
+          syncFailureMessage = String(chunk.message || "A resposta não pôde ser reconstruída integralmente.");
+          continue;
+        }
         if (chunk.type === "gen_id" || chunk.type === "heartbeat" || chunk.type === "token_exhausted") continue;
         if (chunk.type === "file" && chunk.name) { ensureRow(); masterCol.appendChild(createFileCard(chunk.name, chunk.data, chunk.mime)); msgAttachments.push({ type: "file", name: chunk.name, data: chunk.data, mime: chunk.mime }); scrollToBottom(); continue; }
         if (chunk.type === "deep_research") { ensureRow(); renderDeepResearchCard(masterCol, chunk); if (chunk.done) msgAttachments = [...msgAttachments.filter(a => a.type !== "deep_research"), { ...chunk }]; continue; }
@@ -119,12 +169,18 @@ async function syncGenerationOnce(genId) {
         if (chunk.type === "ask_user_prompt") { ensureRow(); const _aupAns = await renderAskUserPromptCard(masterCol, chunk.promptId, chunk.questions); msgAttachments.push({ type: "ask_user_prompt", promptId: chunk.promptId, questions: chunk.questions, answers: _aupAns ?? null, timedOut: !_aupAns }); continue; }
         if (chunk.type === "step") {
           ensureRow(); responseBubble = null; segmentReply = "";
-          ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
-          ensureToolActivityCard(masterCol, chunk, activity);
+          ensureToolActivityCard(masterCol, chunk, activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
+          if (chunk.output !== undefined && chunk.output !== "") {
+            showInlineToolResult(masterCol, chunk.id, chunk.tool, chunk.output, responseBubble, chunk.value);
+          }
           scrollToBottom(); continue;
         }
         if (chunk.type === "sources") { ensureRow(); masterCol.appendChild(createSourcesButton(chunk.results)); continue; }
-        if (chunk.type === "error") { ensureRow(); appendMessage("bot", `Erro: ${chunk.message}`); continue; }
+        if (chunk.type === "error") {
+          syncFailed = true;
+          syncFailureMessage = String(chunk.message || "Falha na geração.");
+          continue;
+        }
 
         const delta = chunk.choices?.[0]?.delta;
         if (delta?.reasoning_content) {
@@ -133,6 +189,7 @@ async function syncGenerationOnce(genId) {
           appendThinkingSegment(activity, delta.reasoning_content);
         }
         if (delta?.content) {
+          if (reply.length + String(delta.content).length > MAX_SYNC_RESPONSE_CHARS) throw new Error("Resposta de sincronização grande demais");
           ensureRow();
           reply += delta.content;
           segmentReply += delta.content;
@@ -145,6 +202,17 @@ async function syncGenerationOnce(genId) {
 
     if (responseBubble) renderMarkdown(responseBubble, segmentReply);
     finalizeThinkingSegment(activity);
+    if (syncFailed) {
+      masterRow?.remove();
+      clearPendingGen();
+      appendMessage("bot", `Erro: ${syncFailureMessage || "A resposta não pôde ser reconstruída."}`);
+      return false;
+    }
+    if (syncMissing) {
+      clearPendingGen();
+      if (!reply && !msgAttachments.length) appendMessage("bot", "A geração não está mais disponível. Tente enviar a mensagem novamente.");
+      return false;
+    }
     if (sawDone || syncMissing) clearPendingGen();
     if (reply || msgAttachments.length) {
       const sameContent = previousAssistant
@@ -160,6 +228,7 @@ async function syncGenerationOnce(genId) {
       if (responseBubble) responseBubble._rawText = reply;
     }
   } catch (e) {
+    if (e.name === "AbortError" && userStoppedGeneration) return false;
     if (getPendingGen()?.genId === genId) {
       showSyncBanner(genId);
       schedulePendingSync(genId);
@@ -168,7 +237,10 @@ async function syncGenerationOnce(genId) {
       appendMessage("bot", "Não foi possível sincronizar agora. Tente de novo em instantes.");
     }
   } finally {
+    if (syncAbortController === controller) syncAbortController = null;
+    if (currentAbortController === controller) currentAbortController = null;
     loading = false; hideStopBtn(); currentGenId = null;
+    if (userStoppedGeneration) userStoppedGeneration = false;
   }
 }
 
@@ -224,14 +296,16 @@ function hideStopBtn() {
 }
 
 sendBtn.addEventListener("click", () => {
-  if (loading && currentAbortController) {
+  if (loading && (currentAbortController || syncAbortController)) {
     userStoppedGeneration = true;
-    currentAbortController.abort();
+    try { currentAbortController?.abort(); } catch {}
+    try { syncAbortController?.abort(); } catch {}
 
     if (currentGenId) {
       fetch(`${BACKEND_URL}/chat/stop`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-session-id": localStorage.getItem("boreas_session_id") ?? "" },
+        headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+        credentials: "include",
         body: JSON.stringify({ genId: currentGenId }),
         keepalive: true,
       }).catch(() => {});

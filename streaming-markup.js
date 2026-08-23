@@ -1,6 +1,13 @@
 // Boreas frontend module: sources, Markdown, math, highlighting, and tool result visuals.
 // Loaded as a classic script in the exact order declared by index.html.
 
+function safeExternalUrl(raw) {
+  try {
+    const parsed = new URL(String(raw ?? ""), location.href);
+    return /^https?:$/.test(parsed.protocol) ? parsed.href : null;
+  } catch { return null; }
+}
+
 function createSourcesButton(sources) {
   const wrap = document.createElement("div");
   wrap.className = "sources-btn-wrap";
@@ -16,15 +23,17 @@ function createSourcesButton(sources) {
   dropdown.appendChild(titleEl);
 
   sources.forEach(s => {
+    const sourceUrl = safeExternalUrl(s?.url);
+    if (!sourceUrl) return;
     const a = document.createElement("a");
-    a.className = "sources-link"; a.href = s.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+    a.className = "sources-link"; a.href = sourceUrl; a.target = "_blank"; a.rel = "noopener noreferrer";
     try {
       const ico = document.createElement("img");
-      ico.src = s.favicon ?? `https://www.google.com/s2/favicons?domain=${new URL(s.url).hostname}&sz=32`;
+      ico.src = safeExternalUrl(s.favicon) ?? `https://www.google.com/s2/favicons?domain=${encodeURIComponent(new URL(sourceUrl).hostname)}&sz=32`;
       ico.onerror = () => { ico.style.display = "none"; };
       a.appendChild(ico);
     } catch {}
-    const lbl = document.createElement("span"); lbl.textContent = s.title || s.url;
+    const lbl = document.createElement("span"); lbl.textContent = s.title || sourceUrl;
     a.appendChild(lbl);
     dropdown.appendChild(a);
   });
@@ -51,7 +60,7 @@ function createSourcesButton(sources) {
 if (typeof DOMPurify !== 'undefined') {
   // Normaliza os atributos target e rel dos links para manter a navegação segura.
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-    if (node.tagName === 'A' && node.hasAttribute('target')) {
+    if (String(node.tagName ?? '').toUpperCase() === 'A' && node.hasAttribute('target')) {
       node.setAttribute('rel', 'noopener noreferrer');
     }
   });
@@ -61,7 +70,7 @@ if (typeof marked !== 'undefined') {
   const renderer = new marked.Renderer();
   const _origLink = renderer.link.bind(renderer);
   renderer.link = (href, title, text) => {
-    const html = _origLink(href, title, text);
+    const html = _origLink(safeExternalUrl(href) ?? "", title, text);
     return html.replace(/^<a /, '<a target="_blank" rel="noopener noreferrer" ');
   };
   renderer.code = (code, lang) => {
@@ -195,8 +204,10 @@ function buildToolResultVisual(tool, output, value) {
   }
   if (tool === "PRESENT_IMAGE") {
     try {
-      const spec = JSON.parse(output);
-      const imgs = Array.isArray(spec.images) ? spec.images : [];
+      const serialized = String(output ?? "");
+      if (serialized.length > 1_000_000) return null;
+      const spec = JSON.parse(serialized);
+      const imgs = (Array.isArray(spec.images) ? spec.images : []).slice(0, 20);
       if (!imgs.length) return null;
       const wrap = document.createElement("div");
       wrap.style.cssText = "margin-top:4px";
@@ -208,21 +219,24 @@ function buildToolResultVisual(tool, output, value) {
       }
       const gallery = document.createElement("div");
       gallery.style.cssText = "display:flex;gap:10px;overflow-x:auto;padding:2px 2px 6px";
-      imgs.forEach(im => {
+      for (const im of imgs) {
+        const imageUrl = safeExternalUrl(im?.url);
+        const sourceUrl = safeExternalUrl(im?.source_url || im?.url);
+        if (!imageUrl || !sourceUrl) continue;
         const card = document.createElement("a");
-        card.href = im.source_url || im.url;
+        card.href = sourceUrl;
         card.target = "_blank";
         card.rel = "noopener noreferrer";
         card.title = im.description || im.domain || "";
         card.style.cssText = "position:relative;flex:0 0 auto;width:200px;height:150px;border-radius:14px;overflow:hidden;display:block;background:var(--surface);border:1px solid var(--border)";
         const img = document.createElement("img");
-        img.src = im.url; img.loading = "lazy"; img.alt = im.description || im.domain || "";
+        img.src = imageUrl; img.loading = "lazy"; img.alt = im.description || im.domain || "";
         img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block";
         const pill = document.createElement("span");
         pill.style.cssText = "position:absolute;left:8px;bottom:8px;display:flex;align-items:center;gap:5px;background:rgba(20,20,20,.92);color:#fff;font-size:11px;padding:5px 9px;border-radius:999px;max-width:calc(100% - 16px);overflow:hidden";
         if (im.domain) {
           const fav = document.createElement("img");
-          fav.src = `https://www.google.com/s2/favicons?domain=${im.domain}&sz=32`;
+          try { fav.src = `https://www.google.com/s2/favicons?domain=${encodeURIComponent(new URL(sourceUrl).hostname)}&sz=32`; } catch { fav.remove(); }
           fav.style.cssText = "width:12px;height:12px;border-radius:2px;flex-shrink:0";
           pill.appendChild(fav);
         }
@@ -232,7 +246,7 @@ function buildToolResultVisual(tool, output, value) {
         pill.appendChild(domainSpan);
         card.appendChild(img); card.appendChild(pill);
         gallery.appendChild(card);
-      });
+      }
       wrap.appendChild(gallery);
       return wrap;
     } catch (e) { return null; }
@@ -310,4 +324,3 @@ function renderStepBody(body, tool, value, output) {
   const outEl = document.createElement("pre"); outEl.className = "task-output"; outEl.textContent = output;
   body.appendChild(cmdEl); body.appendChild(outEl);
 }
-

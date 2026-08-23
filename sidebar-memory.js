@@ -97,11 +97,10 @@ async function renderConnectorsView(body) {
     </div>`;
 
   const toggle = document.getElementById("cap-sandboxNetwork");
-  const sessionId = localStorage.getItem("boreas_session_id");
   let current = { sandboxNetwork: false };
-  if (sessionId) {
+  if (BoreasSync.isAuthed()) {
     try {
-      const r = await fetch(BACKEND_URL + "/capabilities", { headers: { "x-session-id": sessionId } });
+      const r = await fetch(BACKEND_URL + "/capabilities", { headers: BoreasSessionHeaders(), credentials: "include" });
       if (r.ok) current = (await r.json()).capabilities ?? current;
     } catch {}
   }
@@ -111,17 +110,19 @@ async function renderConnectorsView(body) {
     const next = !toggle.classList.contains("on");
     toggle.classList.toggle("on", next);
     toggle.setAttribute("aria-checked", String(next));
-    if (!sessionId) return;
+    if (!BoreasSync.isAuthed()) return;
     try {
       const r = await fetch(BACKEND_URL + "/capabilities", {
         method: "PUT",
-        headers: { "Content-Type": "application/json", "x-session-id": sessionId },
+        headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+        credentials: "include",
         body: JSON.stringify({ sandboxNetwork: next }),
       });
-      if (!r.ok) throw new Error("capability update failed");
-    } catch {
+      if (!r.ok) throw await boreasHttpError(r);
+    } catch (error) {
       toggle.classList.toggle("on", !next);
       toggle.setAttribute("aria-checked", String(!next));
+      showToast(error?.message || "Não foi possível atualizar o acesso web da VM.");
     }
   });
 }
@@ -133,11 +134,10 @@ function renderPrivacyView(body) {
 
 async function renderFontView(body) {
   body.innerHTML = `<div id="font-list-wrap"><div class="usage-loading">Carregando...</div></div>`;
-  const sessionId = localStorage.getItem("boreas_session_id");
   let current = { font: localStorage.getItem("boreas_font") || "Inter", availableFonts: [] };
-  if (sessionId) {
+  if (BoreasSync.isAuthed()) {
     try {
-      const r = await fetch(BACKEND_URL + "/appearance", { headers: { "x-session-id": sessionId } });
+      const r = await fetch(BACKEND_URL + "/appearance", { headers: BoreasSessionHeaders(), credentials: "include" });
       if (r.ok) current = await r.json();
     } catch {}
   }
@@ -165,16 +165,23 @@ async function renderFontView(body) {
   wrap.querySelectorAll(".font-list-item").forEach(item => {
     item.addEventListener("click", async () => {
       const font = item.dataset.font;
+      const previousFont = localStorage.getItem("boreas_font") || "Inter";
       applyFont(font);
       wrap.querySelectorAll(".font-list-item").forEach(i => i.classList.toggle("selected", i === item));
-      if (!sessionId) return;
+      if (!BoreasSync.isAuthed()) return;
       try {
-        await fetch(BACKEND_URL + "/appearance", {
+        const response = await fetch(BACKEND_URL + "/appearance", {
           method: "PUT",
-          headers: { "Content-Type": "application/json", "x-session-id": sessionId },
+          headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+          credentials: "include",
           body: JSON.stringify({ font }),
         });
-      } catch {}
+        if (!response.ok) throw await boreasHttpError(response);
+      } catch (error) {
+        applyFont(previousFont);
+        wrap.querySelectorAll(".font-list-item").forEach(i => i.classList.toggle("selected", i.dataset.font === previousFont));
+        showToast(error?.message || "Não foi possível atualizar a fonte.");
+      }
     });
   });
 }
@@ -206,10 +213,9 @@ document.getElementById("sidebar-settings-btn").addEventListener("click", async 
   closeSettingsSubview();
   document.getElementById("settings-overlay").classList.add("show");
 
-  const sessionId = localStorage.getItem("boreas_session_id");
-  if (sessionId) {
+  if (BoreasSync.isAuthed()) {
     try {
-      const r = await fetch(BACKEND_URL + "/appearance", { headers: { "x-session-id": sessionId } });
+      const r = await fetch(BACKEND_URL + "/appearance", { headers: BoreasSessionHeaders(), credentials: "include" });
       if (r.ok) {
         const data = await r.json();
         if (data.font) applyFont(data.font);

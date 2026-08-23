@@ -69,15 +69,29 @@ async function loadUsageStats() {
   el.innerHTML = '<div class="usage-loading">Não foi possível carregar o uso.</div>';
 }
 
-document.getElementById("settings-logout-btn").addEventListener("click", () => {
+document.getElementById("settings-logout-btn").addEventListener("click", async () => {
   // Invalida a sessão no servidor quando possível. O carregamento da fila e
   // das gerações pendentes também é interrompido abaixo antes de trocar de
   // conta neste navegador.
   if (typeof BoreasSync !== "undefined" && BoreasSync.isAuthed()) {
-    BoreasSync.request("/logout", { method: "POST", retries: 0, silent: true });
+    const result = await BoreasSync.request("/logout", { method: "POST", retries: 0, silent: true, keepalive: true, timeoutMs: 10000 });
+    if (!result.ok && result.error !== "unauthorized") {
+      showToast("Não foi possível invalidar a sessão. Tente novamente.");
+      return;
+    }
   }
-  ["boreas_session_id","boreas_name","boreas_email","boreas_use","boreas_onboarded",
-   ACTIVE_KEY, "boreas_pending_gen", "boreas_memory_global","boreas_theme","boreas_font"].forEach(k => localStorage.removeItem(k));
+  const currentScope = localStorage.getItem("boreas_session_scope") || "";
+  await Promise.all([
+    globalThis.BoreasClearSyncQueue?.(),
+    globalThis.BoreasClearImageStore?.(currentScope),
+    globalThis.BoreasClearAllImageStore?.(),
+    globalThis.BoreasClearLegacyImageStore?.(),
+  ]);
+  globalThis.BoreasClearScopedCache?.(currentScope);
+  globalThis.BoreasClearAllScopedCaches?.();
+  await globalThis.BoreasSetAuthScope?.(null);
+  ["boreas_authenticated","boreas_name","boreas_email","boreas_use","boreas_onboarded",
+   ACTIVE_KEY, "boreas_pending_gen", "boreas_session_scope", "boreas_memory_global","boreas_theme","boreas_font"].forEach(k => localStorage.removeItem(k));
 
   for (const k in _chatsMeta) delete _chatsMeta[k];
   location.reload();
