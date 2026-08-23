@@ -2,11 +2,21 @@
 // 
 // Mantém a fila de sincronização viva no Service Worker para reenviar saves quando a rede voltar.
 
+// Em topologia de origem única (frontend e backend no mesmo tunnel),
+// backend-config.js normalmente não existe/não é necessário e o fallback
+// para self.location.origin cobre esse caso. Em topologia separada
+// (frontend no GitHub Pages, backend em outro domínio), self.location.origin
+// aqui dentro do worker é a origem do GitHub Pages — errado para as
+// chamadas de API. importScripts carrega o mesmo arquivo que o frontend usa
+// (define globalThis.BOREAS_BACKEND_URL, compatível com worker global).
+try { importScripts("backend-config.js"); } catch { /* arquivo não existe: modo mesma origem */ }
+
 const SYNC_QUEUE_DB = "boreas_sync_queue_db";
 const SYNC_QUEUE_DB_VERSION = 2;
 const SYNC_META_STORE = "meta";
 const ACTIVE_SCOPE_KEY = "activeAccountScope";
-const BOREAS_BACKEND_URL = self.location.origin;
+const BOREAS_BACKEND_URL = globalThis.BOREAS_BACKEND_URL || self.location.origin;
+const BOREAS_BACKEND_ORIGIN = new URL(BOREAS_BACKEND_URL).origin;
 
 function openQueueDb() {
   return new Promise((resolve, reject) => {
@@ -35,7 +45,7 @@ function setActiveScope(scope) {
 
 async function getServerAccountScope(db) {
   try {
-    const response = await fetch(new URL("/session", self.location.origin), {
+    const response = await fetch(new URL("/session", BOREAS_BACKEND_URL), {
       credentials: "include",
       cache: "no-store",
     });
@@ -95,7 +105,7 @@ async function flushQueueInSW() {
       // enviados para uma origem diferente nem ficar presos na fila.
       const rawTarget = item.path || item.url || "/";
       const target = new URL(rawTarget, BOREAS_BACKEND_URL);
-      if (target.origin !== self.location.origin) {
+      if (target.origin !== BOREAS_BACKEND_ORIGIN) {
         await deleteQueued(db, item.key);
         continue;
       }
