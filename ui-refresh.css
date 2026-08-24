@@ -292,7 +292,9 @@ button:active { transform: scale(.97); }
 
 /* Refinements: compact density, fixed desktop navigation and focused sheets. */
 .msg-regenerate-btn[hidden] { display: none !important; }
-.msg-regenerate-btn svg { display: block; position: static; top: auto; transform: none; flex: 0 0 auto; }
+/* Mesmo glifo "refresh" do menu de long-press (.user-ctx-item#uctx-retry) -
+   pesa visualmente pra baixo dentro do viewBox, precisa do mesmo ajuste de 1px. */
+.msg-regenerate-btn svg { display: block; position: relative; top: -1px; transform: none; flex: 0 0 auto; }
 .sidebar-chat-match { margin-top: 5px; color: var(--text-dim); font-size: 10px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .sidebar-empty-msg { padding: 20px 12px; }
 .sidebar-error-toast { position: fixed; z-index: 260; left: 50%; bottom: max(22px, env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: min(360px, calc(100vw - 32px)); padding: 11px 14px; border: 1px solid rgba(248,113,113,.28); border-radius: 12px; background: rgba(75,20,30,.94); color: #ffd9de; box-shadow: 0 12px 36px rgba(0,0,0,.34); font-size: 12px; font-weight: 600; text-align: center; }

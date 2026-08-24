@@ -136,7 +136,7 @@ async function loadMoreChats() {
 globalThis.BoreasLoadMoreChats = loadMoreChats;
 globalThis.BoreasChatsHasMore = () => chatsHasMore;
 
-async function pushChatToServer(id, title, msgs, tier, speed, effort, { keepalive = false } = {}) {
+async function pushChatToServer(id, msgs, tier, speed, effort, { keepalive = false } = {}) {
   if (!BoreasSync.isAuthed()) return false;
 
   const safeMsgs = (msgs ?? []).map(m => {
@@ -155,14 +155,18 @@ async function pushChatToServer(id, title, msgs, tier, speed, effort, { keepaliv
     })};
   });
 
-  const res = await BoreasSync.chats.save({ id, title, messages: safeMsgs, tier, speed, effort }, { keepalive });
+  // Título nunca viaja por aqui: generateTitle()/setChatTitle() rodam em
+  // paralelo ao primeiro save e usam o endpoint dedicado de rename. Mandar o
+  // título "Nova conversa" ainda capturado neste save corria o risco de
+  // resolver depois do rename e apagar o título real, tanto no servidor
+  // quanto localmente (ambos escreviam em _chatsMeta[id].title).
+  const res = await BoreasSync.chats.save({ id, messages: safeMsgs, tier, speed, effort }, { keepalive });
   if (!res.ok) {
     console.warn("[pushChatToServer] falhou (" + res.error + ") - chat enfileirado para reenvio automático:", id);
     return false;
   }
 
   if (_chatsMeta[id]) {
-    _chatsMeta[id].title = title;
     _chatsMeta[id].tier  = tier;
     _chatsMeta[id].effort = effort;
     _chatsMeta[id].updatedAt = new Date().toISOString();
@@ -285,7 +289,7 @@ async function saveCurrentMessages({ keepalive = false } = {}) {
   // was running, never save the old snapshot under the new active chat.
   if (localStorage.getItem(ACTIVE_KEY) !== id || messages !== snapshot || _chatsMeta[id] !== meta) return;
 
-  await pushChatToServer(id, meta.title, storedMsgs, meta.tier ?? currentTier, meta.speed ?? currentSpeed, meta.effort ?? currentEffort, { keepalive });
+  await pushChatToServer(id, storedMsgs, meta.tier ?? currentTier, meta.speed ?? currentSpeed, meta.effort ?? currentEffort, { keepalive });
 
   if (!keepalive && localStorage.getItem(ACTIVE_KEY) === id && messages === snapshot) renderSidebar();
 }
@@ -404,7 +408,13 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
       if (m.role === "user") {
         let text = "", imgs = [];
         if (typeof m.content === "string") {
-          text = m.content;
+          // O backend persiste imagens do usuário como "[imagem:ID.ext]"
+          // dentro de uma string (attachment-service.js/persistUserImage),
+          // servidas depois em GET /chat-image/:id - sem isso, o marcador de
+          // texto aparecia cru na bolha em vez de virar imagem de novo.
+          const imageMarker = /\[imagem:([A-Za-z0-9_-]+\.[A-Za-z0-9]+)\]\s*/g;
+          imgs = [...m.content.matchAll(imageMarker)].map(match => `${BACKEND_URL}/chat-image/${match[1]}`);
+          text = m.content.replace(imageMarker, "").trim();
         } else if (Array.isArray(m.content)) {
           const tp = m.content.find(p => p.type === "text");
           imgs = m.content.filter(p => p.type === "image_url").map(p => p.image_url?.url).filter(Boolean);

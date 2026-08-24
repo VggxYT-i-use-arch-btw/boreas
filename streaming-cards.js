@@ -465,6 +465,15 @@ const TOOL_ACTIVITY_ICON_PATHS = {
   PREFERENCES: `<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.1h-2.5v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H4.5v-2.5h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.8-1.8.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V4.5h2.5v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1V13h-.1a1.7 1.7 0 0 0-1.5 1z"></path>`,
   CALCULATOR: `<rect x="5" y="2" width="14" height="20" rx="2"></rect><path d="M8 6h8M8 11h2M14 11h2M8 15h2M14 15h2M8 19h2M14 19h2"></path>`,
   IMAGE_SEARCH: `<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4M8 13l2-2 2 2 2-2 2 2"></path>`,
+  ASK_USER: `<path d="M12 2a10 10 0 1 0 4.24 19.03L22 22l-1.29-4.24A10 10 0 0 0 12 2Z"></path><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2 1.75-2 3.5"></path><path d="M12 16.5h.01"></path>`,
+  GRAPH: `<path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-4 4"></path>`,
+  FORWARD_MESSAGE: `<path d="m10 17 5-5-5-5"></path><path d="M4 17V7a2 2 0 0 1 2-2h13"></path>`,
+  USE_PLUGIN: `<path d="M12 2v4"></path><path d="M6 8h12l1 6a6 6 0 0 1-6 6h-2a6 6 0 0 1-6-6l1-6Z"></path><path d="M9 14v2M15 14v2"></path>`,
+  PRESENT_IMAGE: `<rect x="3" y="4" width="18" height="16" rx="2"></rect><circle cx="9" cy="10" r="1.5"></circle><path d="m4 18 5-5 4 4 3-3 4 4"></path>`,
+  VIEW_CHATS: `<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>`,
+  CURRENCY: `<circle cx="12" cy="12" r="9"></circle><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 1-3 2.3 0 3.2 6 1.5 6 4.7 0 1.3-1.3 2.3-3 2.3a3 3 0 0 1-3-1.5"></path><path d="M12 6v2M12 16v2"></path>`,
+  DEEP_RESEARCH: `<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path><path d="M11 8v3l2 2"></path>`,
+  AGENTIC_LOOP: `<path d="M17 2.1l4 4-4 4"></path><path d="M3 12.7V9.6a4 4 0 0 1 4-4h13.4"></path><path d="M7 21.9l-4-4 4-4"></path><path d="M21 11.3v3.1a4 4 0 0 1-4 4H3.6"></path>`,
 };
 function toolActivityIconSvg(tool) {
   const paths = TOOL_ACTIVITY_ICON_PATHS[tool] ?? TOOL_ACTIVITY_ICON_PATHS.PREFERENCES;
