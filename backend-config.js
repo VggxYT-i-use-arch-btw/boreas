@@ -1,3 +1,3 @@
 // Cloudflared
 // Tunnel
-globalThis.BOREAS_BACKEND_URL = "https://taxi-writers-preferred-million.trycloudflare.com";
+globalThis.BOREAS_BACKEND_URL = "https://diameter-either-exclusively-gates.trycloudflare.com";
