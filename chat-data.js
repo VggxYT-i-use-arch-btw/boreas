@@ -1,51 +1,83 @@
-// Boreas: estado e CRUD local/remoto de conversas.
+// Boreas: local/remote conversation state and CRUD.
 
 const TIERS = {
-  altra:  { label: "Boreas Altra I" },
-  ultra:  { label: "Boreas 5.8 Ultra" },
-  pro:    { label: "Boreas 5.8 Pro" },
-  normal: { label: "Boreas 5.8" },
-  coding: { label: "Boreas Nova 5.9" },
-  codingpro: { label: "Boreas Nova 5.9 Pro" },
+  altra1:  { label: "Boreas Altra I" },
+  solstice1:  { label: "Boreas Solstice I" },
+  sunset2:    { label: "Boreas Sunset II" },
+  horizon2: { label: "Boreas Horizon II" },
+  nebula1: { label: "Boreas Nebula I" },
+  starlight2: { label: "Boreas Starlight II" },
 };
 
-const TIER_SPEEDS = { altra: "cheapest", ultra: "cheapest", pro: "cheapest", normal: "fastest", coding: "fastest", codingpro: "fastest" };
+const TIER_SPEEDS = { altra1: "cheapest", solstice1: "cheapest", sunset2: "cheapest", horizon2: "fastest", nebula1: "fastest", starlight2: "fastest" };
 let ACCOUNT_SCOPE = "";
 let LAST_TIER_KEY = "";
 
-// Pro, Altra, and Nova (coding, text-only) keep vision disabled in the UI.
-const NO_VISION_TIERS = ["pro", "altra", "coding", "codingpro"];
-const NO_VISION_LABEL = { pro: "Pro", altra: "Altra I", coding: "Nova 5.9", codingpro: "Nova 5.9 Pro" };
+// Altra, Nebula, and Starlight (coding, text-only) keep vision disabled in the UI.
+const NO_VISION_TIERS = ["altra1", "nebula1", "starlight2"];
+const NO_VISION_LABEL = { altra1: "Altra I", nebula1: "Nebula I", starlight2: "Starlight II" };
 
-// Mirrors server.js EFFORT_TIERS.
-const EFFORT_TIERS = ["altra", "pro", "ultra", "coding", "codingpro"];
-const VALID_EFFORTS = ["default", "low", "medium", "high"];
-const EFFORT_LABELS = { default: "Padrão", low: "Baixo", medium: "Médio", high: "Alto" };
+// Effort levels each tier actually accepts, ordered weakest -> strongest,
+// plus the level used when nothing valid is stored yet. Mirrors
+// TIER_EFFORTS in back-end/sub_boreas/config/runtime.js - keep both in sync.
+const TIER_EFFORTS = {
+  altra1:     { levels: ["low", "high", "max"],             default: "max" },
+  solstice1:  { levels: ["low", "high", "max"],             default: "max" },
+  sunset2:    { levels: ["low", "medium", "xhigh"],         default: "xhigh" },
+  horizon2:   { levels: ["low", "medium", "high", "xhigh"], default: "high" },
+  nebula1:    { levels: ["low", "high", "max"],             default: "high" },
+  starlight2: { levels: ["low", "high", "max"],             default: "high" },
+};
+// All six tiers now expose the effort control.
+const EFFORT_TIERS = Object.keys(TIER_EFFORTS);
+// Label/description shown per level, not per tier - a given level name
+// (e.g. "high") reads the same regardless of which tier's ceiling it is.
+const EFFORT_LABELS = { low: "Baixo", medium: "Médio", high: "Alto", xhigh: "Máximo", max: "Máximo" };
+const EFFORT_DESCRIPTIONS = {
+  low: "Para tarefas simples e rápidas",
+  medium: "Para tarefas que exigem um pouco mais de pensamento",
+  high: "Para trabalhos complexos e difíceis",
+  xhigh: "Para os problemas mais difíceis, sem economizar raciocínio",
+  max: "Para os problemas mais difíceis, sem economizar raciocínio",
+};
 
-let currentTier = "ultra";
+let currentTier = "solstice1";
 let currentSpeed = TIER_SPEEDS[currentTier];
 
 // Stores the last effort used per tier.
 
 function lastEffortFor(tier) {
+  const cfg = TIER_EFFORTS[tier];
+  if (!cfg) return "default";
   const v = localStorage.getItem((ACCOUNT_SCOPE ? "boreas_last_effort_" + ACCOUNT_SCOPE + "_" : "boreas_last_effort_unauthed_") + tier);
-  return VALID_EFFORTS.includes(v) ? v : "default";
+  return cfg.levels.includes(v) ? v : cfg.default;
 }
 let currentEffort = "default";
 
-// Syncs the effort row with the active tier.
+// Renders the effort options for the active tier (they differ per tier -
+// see TIER_EFFORTS) and syncs the pill/section to the current selection.
 
 function syncEffortUI() {
   const section = document.getElementById("effort-section");
   if (!section) return;
-  const supports = EFFORT_TIERS.includes(currentTier);
+  const cfg = TIER_EFFORTS[currentTier];
+  const supports = !!cfg;
   section.classList.toggle("show", supports);
   if (!supports) section.classList.remove("open");
   const valueEl = document.getElementById("effort-pill-btn-value");
   if (valueEl) valueEl.textContent = EFFORT_LABELS[currentEffort] ?? "Padrão";
-  document.querySelectorAll(".effort-option").forEach(o =>
-    o.classList.toggle("active", supports && o.dataset.effort === currentEffort)
-  );
+  const inner = document.getElementById("effort-list-inner");
+  if (!inner) return;
+  if (!supports) { inner.innerHTML = ""; return; }
+  inner.innerHTML = cfg.levels.map(level => `
+    <div class="effort-option${level === currentEffort ? " active" : ""}" data-effort="${level}">
+      <svg class="effort-option-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      <div class="effort-option-info">
+        <div class="effort-option-name">${EFFORT_LABELS[level] ?? level}</div>
+        <div class="effort-option-desc">${EFFORT_DESCRIPTIONS[level] ?? ""}</div>
+      </div>
+    </div>
+  `).join("");
 }
 let messages     = [];
 let loading      = false;
@@ -65,7 +97,7 @@ function refreshAccountScopedState() {
   LAST_TIER_KEY = ACCOUNT_SCOPE ? "boreas_last_tier_" + ACCOUNT_SCOPE : "boreas_last_tier_unauthed";
   ACTIVE_KEY = "boreas_active_chat_v2_" + (ACCOUNT_SCOPE || "unauthed");
   const savedTier = localStorage.getItem(LAST_TIER_KEY);
-  currentTier = Object.hasOwn(TIER_SPEEDS, savedTier) ? savedTier : "ultra";
+  currentTier = Object.hasOwn(TIER_SPEEDS, savedTier) ? savedTier : "solstice1";
   currentSpeed = TIER_SPEEDS[currentTier];
   currentEffort = EFFORT_TIERS.includes(currentTier) ? lastEffortFor(currentTier) : "default";
   syncEffortUI();
@@ -144,23 +176,22 @@ async function pushChatToServer(id, msgs, tier, speed, effort, { keepalive = fal
     return { ...m, content: m.content.map(p => {
       if (p.type !== "image_url") return p;
       const url = p.image_url?.url ?? "";
-      // "data:" cobre o caso defensivo (chamada com imagem crua); "__idb:"
-      // é o formato real que chega aqui, já que stripImagesForStorage roda
-      // antes e troca a imagem por essa referência local ao IndexedDB - sem
-      // esse segundo caso, o servidor guardava a referência inútil em vez
-      // do placeholder de texto.
+      // "data:" covers a raw image passed directly; "__idb:" is the normal
+      // case, since stripImagesForStorage already replaced it with a local
+      // IndexedDB reference before this runs. Both become a text placeholder
+      // for the server, which never stores image bytes.
       return (url.startsWith("data:") || url.startsWith("__idb:"))
         ? { type: "text", text: "[imagem]" }
         : p;
     })};
   });
 
-  // Título nunca viaja por aqui: generateTitle()/setChatTitle() rodam em
-  // paralelo ao primeiro save e usam o endpoint dedicado de rename. Mandar o
-  // título "Nova conversa" ainda capturado neste save corria o risco de
-  // resolver depois do rename e apagar o título real, tanto no servidor
-  // quanto localmente (ambos escreviam em _chatsMeta[id].title).
-  const res = await BoreasSync.chats.save({ id, messages: safeMsgs, tier, speed, effort }, { keepalive });
+  // The title never travels through here: generateTitle()/setChatTitle()
+  // run in parallel with the first save and use the dedicated rename
+  // endpoint. Sending the still-captured "New conversation" title in this
+  // save would risk resolving after the rename and wiping out the real
+  // title, both on the server and locally (both write to _chatsMeta[id].title).
+  const res = await BoreasSync.chats.save({ id, messages: safeMsgs, tier, speed, effort }, { keepalive, localMessages: msgs });
   if (!res.ok) {
     console.warn("[pushChatToServer] falhou (" + res.error + ") - chat enfileirado para reenvio automático:", id);
     return false;
@@ -301,7 +332,7 @@ function setChatTitle(id, title) {
   meta.title = newTitle;
   renderSidebar();
 
-  // Atualiza só o título no servidor para não sobrescrever mensagens com um snapshot antigo.
+  // Updates only the title on the server, to avoid overwriting messages with a stale snapshot.
   if (BoreasSync.isAuthed()) BoreasSync.chats.renameTitle(id, newTitle);
 }
 
@@ -373,7 +404,7 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
     );
   }
   currentEffort = EFFORT_TIERS.includes(currentTier)
-    ? (VALID_EFFORTS.includes(chat.effort) ? chat.effort : "default")
+    ? (TIER_EFFORTS[currentTier].levels.includes(chat.effort) ? chat.effort : TIER_EFFORTS[currentTier].default)
     : "default";
   syncEffortUI();
   updateImageAttach();
@@ -408,10 +439,9 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
       if (m.role === "user") {
         let text = "", imgs = [];
         if (typeof m.content === "string") {
-          // O backend persiste imagens do usuário como "[imagem:ID.ext]"
-          // dentro de uma string (attachment-service.js/persistUserImage),
-          // servidas depois em GET /chat-image/:id - sem isso, o marcador de
-          // texto aparecia cru na bolha em vez de virar imagem de novo.
+          // The backend persists user images as "[imagem:ID.ext]" inside a
+          // string (attachment-service.js/persistUserImage), later served
+          // via GET /chat-image/:id; this turns that marker back into an image.
           const imageMarker = /\[imagem:([A-Za-z0-9_-]+\.[A-Za-z0-9]+)\]\s*/g;
           imgs = [...m.content.matchAll(imageMarker)].map(match => `${BACKEND_URL}/chat-image/${match[1]}`);
           text = m.content.replace(imageMarker, "").trim();
@@ -432,7 +462,7 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
     scrollToBottom();
     if (msgInputEl) msgInputEl.placeholder = "Continue explorando o infinito...";
 
-    // Mostra o aviso de mensagem sem resposta quando um chat aberto ainda tem uma mensagem pendente.
+    // Shows the "unanswered message" banner when an open chat still has a pending message.
     const pendingHere = getPendingGen();
     const hasPendingHere = pendingHere?.genId && pendingHere.chatId === id;
     if (!hasPendingHere && messages.length > 0 && messages[messages.length - 1].role === "user") {
@@ -447,11 +477,12 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
 
   renderSidebar();
 
-  // O cache atende a primeira pintura; a rede atualiza silenciosamente em
-  // paralelo. Não re-renderiza enquanto outra geração ou anexo estiver ativo.
+  // The cache only serves the first paint; the network updates silently in
+  // parallel. Doesn't re-render while another generation or attachment is active.
   if (cachedSnapshot && !cachedChat && !skipRemote && BoreasSync.isAuthed()) {
-    // O cache é apenas a primeira pintura. Esta chamada sempre vai à rede,
-    // mesmo quando o cache existe, e só remonta a conversa se houver mudança.
+    // The cache is only for the first paint. This call always hits the
+    // network, even when the cache exists, and only remounts the
+    // conversation if something changed.
     BoreasSync.chats.revalidate(id, cachedSnapshot).then(result => {
       const active = localStorage.getItem(ACTIVE_KEY) === id;
       const safeToRefresh = active && loadGeneration === chatLoadGeneration

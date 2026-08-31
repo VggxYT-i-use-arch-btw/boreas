@@ -9,8 +9,8 @@ const DR_STEP_TITLES = [
   "Escrever resposta final",
 ];
 const DR_CHECK_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
-// Botão "expandir" nos cards de pesquisa/loop - some as linhas de etapa param
-// de truncar com "..." e mostram o texto completo do plano.
+// "Expand" button on research/loop cards; appears once the step lines stop
+// truncating with "..." and show the plan's full text.
 const DR_EXPAND_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>`;
 
 function renderDeepResearchCard(col, chunk) {
@@ -69,16 +69,12 @@ const AL_STAGE_TITLES = [
   "Toques finais",
 ];
 
-// Enquete do modelo (tool ask_user_prompt) - card interativo inline, resolve
-// quando o usuário responde tudo (single-select submete na hora; multi-select
-// tem botão "Confirmar"). O generation no servidor fica pausado esperando o
-// POST em /prompt-response/:id até 5min.
-// Enquete do modelo (tool ask_user_prompt) - estilo "card do Claude": uma
-// pergunta por vez com contador "N de M", opções em lista numerada, X pra
-// pular tudo, e um campo de resposta livre pra quando nenhuma opção serve.
-// Contrato com o servidor não muda: resolve mandando POST /prompt-response/:id
-// com { answers }, um item por pergunta (string, array de strings, ou null
-// se a pergunta foi pulada/expirou).
+// Model poll (ask_user_prompt tool), Claude-card style: one question at a
+// time with an "N of M" counter, numbered-list options, an X to skip all,
+// and a free-text field for when no option fits.
+// Contract with the server doesn't change: resolves by POSTing
+// /prompt-response/:id with { answers }, one item per question (string,
+// array of strings, or null if the question was skipped or expired).
 function renderAskUserPromptCard(col, promptId, questions) {
   return new Promise(resolve => {
     let card, answers, qi = 0, settled = false;
@@ -92,12 +88,12 @@ function renderAskUserPromptCard(col, promptId, questions) {
       return;
     }
 
-    // Rede de segurança: se algo travar silenciosamente no meio do fluxo
-    // (erro de DOM, race de render), não deixa o stream inteiro preso -
-    // desiste depois de 5min e manda tudo como "não respondido", igual o
-    // timeout que o servidor já aplica no /prompt-response.
+    // Safety net: if something silently hangs mid-flow (a DOM error, a
+    // render race), don't leave the whole stream stuck. Gives up after 5
+    // minutes and reports everything as unanswered, matching the timeout
+    // the server already applies on /prompt-response.
     const safetyTimer = setTimeout(() => {
-      console.warn("[aup] safety timeout - resolvendo sem resposta");
+      console.warn("[aup] safety timeout, resolving unanswered");
       finish();
     }, 300000);
 
@@ -235,9 +231,8 @@ async function finish() {
   });
 }
 
-// Reconstrói uma enquete (ask_user_prompt) já respondida a partir do
-// histórico salvo - versão somente-leitura, sem botões, pra não deixar
-// o card sumir ao reabrir a conversa.
+// Rebuilds an already-answered poll (ask_user_prompt) from saved history:
+// a read-only version, no buttons, so the card doesn't disappear on reload.
 function renderAskUserPromptRecap(col, { questions, answers, timedOut }) {
   const card = document.createElement("div");
   card.className = "aup-card answered";
@@ -260,12 +255,12 @@ function renderAskUserPromptRecap(col, { questions, answers, timedOut }) {
   col.appendChild(card);
 }
 
-// "Pensamento adicional" - depois que o modelo usa pelo menos uma tool,
-// qualquer reasoning_content seguinte vira um item colapsável DENTRO da
-// timeline de "Executando" (mesma mecânica dos task-items de tool), em vez
-// de continuar empilhando no pill "Em trabalho" do topo. Cada nova rodada de
-// pensamento após uma tool vira um item novo - o "step" handler chama
-// closeExtraThink() pra fechar o item atual assim que uma tool nova roda.
+// "Additional thinking": once the model has used at least one tool, any
+// further reasoning_content becomes a collapsible item INSIDE the
+// "Running" timeline (same mechanic as tool task items), instead of piling
+// up on the top "Working" pill. Each new thinking round after a tool
+// becomes a new item; the "step" handler calls closeExtraThink() to close
+// the current item as soon as a new tool runs.
 function ensureExtraThinkItem(stepsDetail, state) {
   if (state.el) return state;
   state.text = "";
@@ -281,18 +276,18 @@ function ensureExtraThinkItem(stepsDetail, state) {
   body.appendChild(outEl);
   taskEl.appendChild(hdr); taskEl.appendChild(body);
   hdr.addEventListener("click", () => taskEl.classList.toggle("expanded"));
-  // Direto no final da timeline, sem agrupar por seção - preserva a ordem
-  // cronológica real (raciocínio intercalado com as tools, na sequência
-  // em que aconteceram), em vez de empurrar tudo pra uma seção "THINKING"
-  // separada do resto.
+  // Appends straight to the end of the timeline, without grouping by
+  // section, preserving the real chronological order (reasoning
+  // interleaved with tools, in the sequence they happened) instead of
+  // pushing everything into a separate "THINKING" section.
   stepsDetail.appendChild(taskEl);
   state.el = taskEl; state.outEl = outEl;
   return state;
 }
-// Cria (uma vez) a pill única "Processo de pensamento" + a timeline abaixo
-// dela, usada tanto pra raciocínio quanto pra tool calls - substitui as duas
-// pills separadas (thinking-pill + tasks-pill "N tarefas") que existiam
-// antes em cada função de streaming.
+// Creates (once) the single "Thinking process" pill plus the timeline below
+// it, used for both reasoning and tool calls; replaces the two separate
+// pills (thinking-pill + tasks-pill "N tasks") that used to exist
+// separately in each streaming function.
 function ensureActivityPill(state, mountFn) {
   if (state.pill) return state;
   state.pill = document.createElement("button"); state.pill.className = "tasks-pill";
@@ -312,7 +307,7 @@ function ensureActivityPill(state, mountFn) {
   mountFn(state.pill, state.detail);
   return state;
 }
-// Tira os pontinhos de "em andamento" quando a geração termina.
+// Removes the "in progress" dots once the generation ends.
 function finalizeActivityPill(state) {
   if (!state.pill) return;
   const dots = state.pill.querySelector(".tp-dots");
@@ -325,15 +320,15 @@ function appendExtraThink(stepsDetail, state, delta) {
 }
 function closeExtraThink(state) { state.el = null; state.outEl = null; state.text = ""; }
 
-// Ícone único do processo de pensamento. O markup abaixo é reaplicado depois
-// da montagem para manter o mesmo desenho em todos os fluxos.
+// Single icon for the thinking process. The markup below is reapplied
+// after mounting to keep the same artwork across all flows.
 const BOREAS_BRAIN_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5a3 3 0 1 0-5.997.125A4 4 0 0 0 3.5 9.75a4 4 0 0 0 1.03 6.79A4 4 0 0 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125A4 4 0 0 1 20.5 9.75a4 4 0 0 1-1.03 6.79A4 4 0 0 1 12 18Z"/><path d="M12 5v13"/><path d="M9 7.5a4 4 0 0 0 3 3.5"/><path d="M15 7.5a4 4 0 0 1-3 3.5"/><path d="M9 15a4 4 0 0 1 3-3.5"/><path d="M15 15a4 4 0 0 0-3-3.5"/></svg>`;
 
-// Renderer por rajada: cada troca de "tipo" (raciocínio <-> tool calls)
-// fecha o segmento atual e abre um novo colapsável, na ordem em que
-// aconteceu - em vez de uma única timeline acumulando tudo o que rolou
-// na resposta inteira. `state` (o "activity") guarda a lista de segmentos
-// já fechados (`state.segments`) e o segmento em aberto (`state.cur`).
+// Burst-based renderer: every "type" switch (reasoning <-> tool calls)
+// closes the current segment and opens a new collapsible one, in the order
+// it happened, instead of one single timeline accumulating everything from
+// the whole response. `state` (the "activity") holds the list of closed
+// segments (`state.segments`) and the currently open one (`state.cur`).
 const TOOL_GROUP_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a2.1 2.1 0 0 0 3 3l6-6a4 4 0 0 0 5.4-5.4l-2.4 2.4-3-3Z"></path></svg>`;
 function BOREAS_createSegmentShell(kind) {
   const pill = document.createElement("button");
@@ -362,8 +357,8 @@ function BOREAS_finalizeSegment(seg) {
   if (!status) return;
   status.textContent = seg.kind === "tool" ? `${seg.stepCount || 0} ${seg.stepCount === 1 ? "passo" : "passos"}` : "Concluído";
 }
-// Retorna o segmento aberto do tipo pedido - se o segmento aberto atual é de
-// outro tipo, fecha ele e monta um novo colapsável (nova rajada).
+// Returns the open segment of the requested kind; if the currently open
+// segment is of a different kind, closes it and starts a new collapsible one.
 function BOREAS_getSegment(state, kind, mountFn) {
   if (state.cur && state.cur.kind === kind) return state.cur;
   if (state.cur) BOREAS_finalizeSegment(state.cur);
@@ -384,22 +379,23 @@ function appendThinkingSegment(state, delta) {
 function finalizeThinkingSegment(state) {
   if (state?.cur) BOREAS_finalizeSegment(state.cur);
 }
-// Fecha o segmento aberto (se houver) e reseta o ponteiro, sem abrir um novo -
-// usado antes de widgets standalone (ex. sub-agentes) que não pertencem a
-// nenhuma pill "Processo de pensamento"/"Ferramentas". Sem isso, um raciocínio
-// que retoma depois do widget continuaria acumulando no segmento de ANTES dele.
+// Closes the open segment (if any) and resets the pointer, without opening
+// a new one; used before standalone widgets (e.g. sub-agents) that don't
+// belong to any "Thinking process"/"Tools" pill. Without this, reasoning
+// that resumes after the widget would keep accumulating into the segment
+// from before it.
 function closeActivitySegment(state) {
   if (state?.cur) { BOREAS_finalizeSegment(state.cur); state.cur = null; }
 }
-// Legado: mantido só pra não quebrar call sites antigos que ainda chamam
-// isso antes de um "step" chegar. A troca de segmento agora é automática
-// (feita por ensureToolSegment/ensureThinkingSegment conforme o tipo muda).
+// Legacy: kept only so old call sites that still call this before a "step"
+// arrives don't break. Segment switching is now automatic (handled by
+// ensureToolSegment/ensureThinkingSegment as the type changes).
 function closeThinkingSegment() {}
 
-// Widget standalone (fora de qualquer pill colapsável) pro invoke-subagents:
-// mostra "Answered with N subagents" com um item por agente, cada um com
-// shimmer enquanto roda e um check quando termina. Atualiza ao vivo porque
-// step.id é o mesmo call id do começo ao fim - só troca o innerHTML.
+// Standalone widget (outside any collapsible pill) for invoke-subagents:
+// shows "Answered with N subagents" with one item per agent, each with a
+// shimmer while running and a check when done. Updates live because
+// step.id is the same call id from start to finish; only the innerHTML changes.
 const SUBAGENTS_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><g fill="currentColor"><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(60 12 12)"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(120 12 12)"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(180 12 12)"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(240 12 12)"></ellipse><ellipse cx="12" cy="4.2" rx="2.1" ry="3.1" transform="rotate(300 12 12)"></ellipse></g></svg>`;
 const SUBAGENT_CHECK_ICON = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`;
 function ensureSubagentsWidget(container, step) {
@@ -447,6 +443,9 @@ const TOOL_ACTIVITY_LABELS = {
   FORWARD_MESSAGE: "Escalando modelo", USE_PLUGIN: "Ativando recurso", IMAGE_SEARCH: "Buscando imagens",
   PRESENT_IMAGE: "Mostrando imagens", VIEW_CHATS: "Consultando conversas", CURRENCY: "Consultando câmbio",
   DEEP_RESEARCH: "Pesquisando profundamente", AGENTIC_LOOP: "Executando plano",
+  USE_TOOL: "Carregando ferramenta",
+  GENERATE_IMAGE: "Criando sua imagem",
+  EDIT_IMAGE: "Editando imagem",
 };
 function toolActivityLabel(tool, value) {
   const label = TOOL_ACTIVITY_LABELS[tool] ?? "Usando ferramenta";
@@ -462,7 +461,7 @@ const TOOL_ACTIVITY_ICON_PATHS = {
   SEND_FILE: `<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline>`,
   CREATE_FILE: `<path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"></path><polyline points="14 2 14 8 20 8"></polyline><path d="M12 12v6M9 15h6"></path>`,
   MEMORY: `<circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M19.1 4.9 17 7M7 17l-2.1 2.1"></path>`,
-  PREFERENCES: `<circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-1.8 1.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5v.1h-2.5v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.9.3l-.1.1-1.8-1.8.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H4.5v-2.5h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1 1.8-1.8.1.1a1.7 1.7 0 0 0 1.9.3 1.7 1.7 0 0 0 1-1.5V4.5h2.5v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1 1.8 1.8-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.5 1h.1V13h-.1a1.7 1.7 0 0 0-1.5 1z"></path>`,
+  PREFERENCES: `<circle cx="12" cy="12" r="3"></circle><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"></path>`,
   CALCULATOR: `<rect x="5" y="2" width="14" height="20" rx="2"></rect><path d="M8 6h8M8 11h2M14 11h2M8 15h2M14 15h2M8 19h2M14 19h2"></path>`,
   IMAGE_SEARCH: `<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4M8 13l2-2 2 2 2-2 2 2"></path>`,
   ASK_USER: `<path d="M12 2a10 10 0 1 0 4.24 19.03L22 22l-1.29-4.24A10 10 0 0 0 12 2Z"></path><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.5-2 1.75-2 3.5"></path><path d="M12 16.5h.01"></path>`,
@@ -474,6 +473,9 @@ const TOOL_ACTIVITY_ICON_PATHS = {
   CURRENCY: `<circle cx="12" cy="12" r="9"></circle><path d="M15 9.5a3 3 0 0 0-3-1.5c-1.7 0-3 1-3 2.3 0 3.2 6 1.5 6 4.7 0 1.3-1.3 2.3-3 2.3a3 3 0 0 1-3-1.5"></path><path d="M12 6v2M12 16v2"></path>`,
   DEEP_RESEARCH: `<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path><path d="M11 8v3l2 2"></path>`,
   AGENTIC_LOOP: `<path d="M17 2.1l4 4-4 4"></path><path d="M3 12.7V9.6a4 4 0 0 1 4-4h13.4"></path><path d="M7 21.9l-4-4 4-4"></path><path d="M21 11.3v3.1a4 4 0 0 1-4 4H3.6"></path>`,
+  USE_TOOL: `<rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect>`,
+  GENERATE_IMAGE: `<rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path>`,
+  EDIT_IMAGE: `<rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path>`,
 };
 function toolActivityIconSvg(tool) {
   const paths = TOOL_ACTIVITY_ICON_PATHS[tool] ?? TOOL_ACTIVITY_ICON_PATHS.PREFERENCES;
@@ -490,9 +492,10 @@ function updateToolActivityCard(card, tool, value, output) {
   const body = card._body;
   body.innerHTML = "";
   if (!done) return;
-  // O widget rico (câmbio, gráfico, imagens...) aparece direto na conversa
-  // via showInlineToolResult - aqui, dentro do card colapsado, fica só o
-  // output cru, pra quem quiser conferir o que a tool devolveu.
+  // The rich widget (currency, chart, images...) appears directly in the
+  // conversation via showInlineToolResult; here, inside the collapsed card,
+  // only the raw output is shown, for anyone who wants to check what the
+  // tool actually returned.
   const out = document.createElement("pre"); out.className = "tool-activity-output";
   out.textContent = String(output ?? "").slice(0, 5000); body.appendChild(out);
   card.classList.toggle("has-details", !!body.childNodes.length);
@@ -518,9 +521,9 @@ function pruneToolActivityCards(host) {
 function ensureToolActivityCard(container, step, activityState, mountFn) {
   if (!container || !step) return null;
   if (step.tool === "INVOKE_SUBAGENTS") {
-    // Widget standalone: não faz parte da pill "Ferramentas" - fecha
-    // qualquer segmento aberto (sem abrir um novo) e renderiza direto na
-    // timeline, como os widgets de showInlineToolResult.
+    // Standalone widget: not part of the "Tools" pill; closes any open
+    // segment (without opening a new one) and renders directly in the
+    // timeline, like the showInlineToolResult widgets.
     closeActivitySegment(activityState);
     return ensureSubagentsWidget(container, step);
   }
@@ -535,7 +538,10 @@ function ensureToolActivityCard(container, step, activityState, mountFn) {
     card.innerHTML = `<button type="button" class="tool-activity-header"><span class="tool-activity-icon"></span><span class="tool-activity-copy"><span class="tool-activity-title"></span><span class="tool-activity-value"></span></span><span class="tool-activity-status">Executando</span><svg class="tool-activity-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>`;
     card._body = document.createElement("div"); card._body.className = "tool-activity-body"; card.appendChild(card._body);
     card.querySelector(".tool-activity-icon").innerHTML = toolActivityIconSvg(step.tool);
-    card.querySelector(".tool-activity-header").addEventListener("click", () => card.classList.toggle("expanded"));
+    card.querySelector(".tool-activity-header").addEventListener("click", () => {
+      if (!card.classList.contains("has-details")) return;
+      card.classList.toggle("expanded");
+    });
     host._toolActivityCards.set(id, card); host.appendChild(card);
     if (seg) seg.stepCount = (seg.stepCount ?? 0) + 1;
   }
@@ -572,9 +578,9 @@ function renderAgenticLoopCard(col, chunk) {
     col.appendChild(card);
   }
 
-  // O modelo escreve, na primeira chamada, uma descrição concreta por etapa
-  // (baseada no objetivo real) - guarda no card pra sobreviver a updates
-  // futuros que não reenviem o plano.
+  // On the first call, the model writes a concrete description per step
+  // (based on the real goal); stored on the card so it survives future
+  // updates that don't resend the plan.
   if (Array.isArray(chunk.plan) && chunk.plan.length) card._plan = chunk.plan;
 
   const percentEl = card.querySelector(".al-card-percent");
@@ -615,11 +621,111 @@ function renderAgenticLoopCard(col, chunk) {
     currentEl.append(summaryLabel, document.createTextNode(` ${String(chunk.summary).slice(0, 2000)}`));
   }
 
-  // Segurança: o card é a fonte de verdade de "terminou ou não" - se o
-  // evento chegou marcado como done, garante que o botão de stop volte ao
-  // normal mesmo que a promise original que abriu esse fetch tenha ficado
-  // presa numa conexão que caiu (comum em long-poll atrás de proxy/túnel).
+  // Safety net: the card is the source of truth for "finished or not". If
+  // the event arrived marked as done, makes sure the stop button reverts to
+  // normal even if the original promise that opened this fetch got stuck on
+  // a dropped connection (common in long-polling behind a proxy/tunnel).
   if (chunk.done) { loading = false; hideStopBtn(); }
 
   scrollToBottom();
+}
+
+const IMG_GEN_ERROR_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>`;
+const IMG_GEN_EXPIRED_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+const IMG_GEN_STATUS_LABELS = {
+  improving_prompt: "Melhorando seu prompt",
+  generating: "Criando sua imagem",
+};
+
+// Renders/updates the generation card for one image (keyed by chunk.image_id
+// - a reply can generate more than one image, each gets its own card). See
+// chat-stream.js's "image_generation" SSE event and db.js's generated_images
+// table for the status machine this mirrors: improving_prompt -> generating
+// -> ready | failed (a fifth state, "expired", is handled separately by
+// markImageGenerationExpired below, applied when a chat with older generated
+// images is reopened rather than as a live SSE state).
+function renderImageGenerationCard(col, chunk) {
+  if (!col || !chunk?.image_id) return null;
+  const wrapId = `img-gen-${chunk.image_id}`;
+  let wrap = col.querySelector(`#${wrapId}`);
+  if (!wrap) {
+    wrap = document.createElement("div");
+    wrap.id = wrapId;
+    wrap.className = "img-gen-wrap";
+    wrap.innerHTML = `
+      <div class="img-gen-status">
+        <span class="img-gen-status-text"></span>
+        <span class="img-gen-dots"><span class="img-gen-dot"></span><span class="img-gen-dot"></span><span class="img-gen-dot"></span></span>
+      </div>
+      <div class="img-gen-card" data-ratio="1:1"></div>`;
+    col.appendChild(wrap);
+  }
+
+  const card = wrap.querySelector(".img-gen-card");
+  const statusText = wrap.querySelector(".img-gen-status-text");
+  const dots = wrap.querySelector(".img-gen-dots");
+  const ratio = chunk.aspect_ratio || card.dataset.ratio || "1:1";
+  card.dataset.ratio = ratio;
+
+  if (chunk.status === "improving_prompt" || chunk.status === "generating") {
+    statusText.textContent = IMG_GEN_STATUS_LABELS[chunk.status] ?? "Criando sua imagem";
+    if (dots) dots.style.display = "";
+    scrollToBottom();
+    return wrap;
+  }
+
+  if (chunk.status === "failed") {
+    if (dots) dots.style.display = "none";
+    statusText.textContent = "Falha na geração";
+    card.classList.add("img-gen-error");
+    card.innerHTML = `${IMG_GEN_ERROR_ICON}<span class="img-gen-error-text">Não foi possível gerar essa imagem. Pode pedir para eu tentar de novo.</span>`;
+    scrollToBottom();
+    return wrap;
+  }
+
+  if (chunk.status === "ready") {
+    if (dots) dots.style.display = "none";
+    statusText.textContent = "Imagem pronta";
+    const img = document.createElement("img");
+    img.alt = "Imagem gerada";
+    img.decoding = "async";
+    img.loading = "lazy";
+    // The placeholder (dark card + sheen) stays visible - and the ::after
+    // sheen keeps running - until the real image has actually finished
+    // loading; only then does it crossfade in and the sheen stop, so
+    // "ready" from the server never means an abrupt swap to a half-loaded
+    // or broken image (Parte 34/35 of the spec).
+    img.addEventListener("load", () => {
+      card.classList.add("img-gen-loaded");
+      requestAnimationFrame(() => img.classList.add("img-loaded"));
+    }, { once: true });
+    img.addEventListener("error", () => {
+      card.classList.add("img-gen-error");
+      card.innerHTML = `${IMG_GEN_ERROR_ICON}<span class="img-gen-error-text">A imagem foi gerada, mas não carregou. Tente reabrir a conversa.</span>`;
+    }, { once: true });
+    img.src = `${BACKEND_URL}/generated-image/${encodeURIComponent(chunk.image_id)}`;
+    card.appendChild(img);
+    card.addEventListener("click", () => { if (typeof openLightbox === "function") openLightbox(img.src); }, { once: true });
+    card.style.cursor = "zoom-in";
+    scrollToBottom();
+    return wrap;
+  }
+
+  return wrap;
+}
+
+// Applied when reopening a chat: a generated_image attachment whose expiry
+// has passed (see db.js's generated_images.expires_at / Parte 30 of the
+// spec) never gets its <img> requested at all - straight to the clear
+// "expired" state instead of a broken-image icon or an infinite spinner.
+function markImageGenerationExpired(col, imageId) {
+  const wrap = col?.querySelector(`#img-gen-${imageId}`);
+  if (!wrap) return;
+  const card = wrap.querySelector(".img-gen-card");
+  const statusText = wrap.querySelector(".img-gen-status-text");
+  const dots = wrap.querySelector(".img-gen-dots");
+  if (dots) dots.style.display = "none";
+  if (statusText) statusText.textContent = "Imagem expirada";
+  card.className = "img-gen-card img-gen-expired";
+  card.innerHTML = `${IMG_GEN_EXPIRED_ICON}<span class="img-gen-expired-text">Essa imagem expirou após 30 dias. Você não pode mais baixá-la.</span>`;
 }

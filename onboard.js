@@ -1,4 +1,4 @@
-// Boreas: loading screen, onboarding e autenticação.
+// Boreas: loading screen, onboarding, and authentication.
 
 (function () {
   var PHRASES = [
@@ -122,8 +122,8 @@
       wasOnboarded = false;
     }
     if (wasOnboarded) {
-      // A flag local não autentica ninguém; confirma a sessão no servidor.
-      // O cookie continua inacessível ao JavaScript.
+      // The local flag authenticates no one; confirms the session on the
+      // server. The cookie remains inaccessible to JavaScript.
       fetch((globalThis.BOREAS_BACKEND_URL || "") + "/session", {
         credentials: "include",
         cache: "no-store",
@@ -171,9 +171,10 @@
       var previousEmail = localStorage.getItem("boreas_email") || "";
       var previousSessionScope = localStorage.getItem("boreas_session_scope") || "";
       var savedName = resolvedName || localStorage.getItem("boreas_name") || email.split("@")[0];
-      // A fila, o cache, as imagens e uma geração interrompida são estado da
-      // identidade anterior. Limpar tudo ao autenticar impede que uma troca
-      // de conta no mesmo navegador reaproveite qualquer escrita pendente.
+      // The queue, the cache, images, and an interrupted generation are all
+      // state belonging to the previous identity. Clearing everything on
+      // authentication prevents an account switch on the same browser from
+      // reusing any pending write.
       await Promise.all([
         globalThis.BoreasClearSyncQueue?.(),
         globalThis.BoreasClearImageStore?.(previousSessionScope),

@@ -1,4 +1,4 @@
-// Boreas: anexos, imagens, compressão, preview e IndexedDB.
+// Boreas: attachments, images, compression, preview, and IndexedDB.
 
 const FILE_KIND_ICONS = {
   image:    `<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline>`,
@@ -80,8 +80,8 @@ function createAttachCard({ name, mime, removable = false, onRemove = null, onCl
 }
 
 function createFileCard(name, b64, mime) {
-  // Preserva acentos/Unicode e remove somente caracteres que quebrariam o
-  // atributo download ou permitiriam transformar o nome em um caminho.
+  // Preserves accents/Unicode and only strips characters that would break
+  // the download attribute or allow the name to be turned into a path.
   const downloadName = String(name ?? "arquivo")
     .normalize("NFC")
     .replace(/[\u0000-\u001f\u007f]/g, "_")
@@ -99,8 +99,8 @@ function createFileCard(name, b64, mime) {
   downloadBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><path d="m7 10 5 5 5-5"></path><path d="M4 19h16"></path></svg>`;
   downloadBtn.addEventListener("click", event => {
     event.stopPropagation();
-    // Converte o base64 em arquivo antes de iniciar o download. O Blob evita
-      // que emojis, acentos e caracteres não latinos sejam perdidos em data URLs.
+    // Converts the base64 into a file before starting the download. The
+      // Blob avoids emojis, accents, and non-Latin characters getting lost in data URLs.
       try {
       const raw = String(b64 ?? "");
       if (raw.length > 24 * 1024 * 1024) throw new Error("arquivo grande demais");
@@ -157,8 +157,8 @@ async function requestPersistentStorage() {
   } catch {}
 }
 
-// O navegador pode despejar IndexedDB sob pressão de espaço. A persistência é
-// solicitada cedo e novamente após uma ação explícita de anexar.
+// The browser can evict IndexedDB under storage pressure. Persistence is
+// requested early, and again after an explicit attach action.
 requestPersistentStorage();
 
 function openImgDb() {
@@ -260,14 +260,12 @@ document.addEventListener("visibilitychange", () => {
 });
 async function idbDeleteByPrefix(prefix) {
   const db = await openImgDb();
-  // Antes: cursor.delete() seguido de cursor.continue() no mesmo onsuccess.
-  // O delete() e o continue() são duas requests enfileiradas na mesma
-  // transação, mas em alguns engines o continue() reposiciona o cursor
-  // antes do delete() ser efetivado, pulando a entrada seguinte (fica
-  // órfã no IndexedDB). Fix: primeiro coleta todas as chaves que batem
-  // com o prefixo (só navegando o cursor, sem mutar nada), e só depois
-  // dispara um store.delete(key) por chave - chaves não dependem mais
-  // da posição do cursor, então nenhuma é pulada.
+  // delete() and continue() are two requests queued in the same
+  // transaction, but on some engines continue() repositions the cursor
+  // before delete() takes effect, skipping the next entry (leaving it
+  // orphaned in IndexedDB). Collects every matching key first (cursor
+  // read-only, no mutation), then fires one store.delete(key) per key;
+  // keys no longer depend on cursor position, so none get skipped.
   const keys = await new Promise((res, rej) => {
     const tx = db.transaction("images", "readonly");
     const store = tx.objectStore("images");
@@ -322,12 +320,13 @@ async function clearImagesForScope(scope) {
 }
 
 globalThis.BoreasClearImageStore = clearImagesForScope;
-// Troca de conta e sessão expirada não têm uma identidade anterior confiável
-// para selecionar no IndexedDB. Nesses casos, apague todas as imagens locais;
-// preservar chaves antigas só criaria um reservatório de dados de outra conta.
+// Account switches and expired sessions don't have a trustworthy prior
+// identity to select by in IndexedDB. In those cases, wipe all local
+// images; keeping old keys around would just leave a pocket of another
+// account's data behind.
 globalThis.BoreasClearAllImageStore = () => idbDeleteWhere(() => true);
-// Remove referências criadas antes do escopo opaco por sessão. Elas usavam
-// e-mail como parte da chave e não podem ser reatribuídas com segurança.
+// Removes references created before the per-session opaque scope. They
+// used email as part of the key and can't be safely reassigned.
 globalThis.BoreasClearLegacyImageStore = () => idbDeleteWhere(key => {
   const value = String(key ?? "");
   return !/^[a-f0-9]{32}:[A-Za-z0-9_-]{1,80}:\d+:\d+$/i.test(value);
@@ -394,11 +393,11 @@ function renderPreviewThumbs() {
   previewWrap.classList.toggle("show", pendingImages.length > 0 || !!pendingFile);
 }
 
-// Serializa a adição de imagens para respeitar o limite por lote e manter o envio consistente.
+// Serializes image additions to respect the per-batch limit and keep sends consistent.
 let _addImagesChain = Promise.resolve();
 function addPendingImages(files) {
   const run = _addImagesChain.then(() => addPendingImagesLocked(files));
-  // Nunca deixa uma rejeição travar a fila pra sempre.
+  // Never lets a rejection stall the queue forever.
   _addImagesChain = run.catch(() => {});
   return run;
 }
@@ -410,9 +409,9 @@ async function addPendingImagesLocked(files) {
     if (files.length > toAdd.length) alert(`Você só pode enviar até ${MAX_IMAGES} fotos por vez. Só as ${toAdd.length} primeiras foram adicionadas.`);
     pendingFile = null;
     for (const file of toAdd) {
-      // Revalida a cada iteração: outra chamada só entra depois que esta
-      // terminar (fila acima), mas isso também protege contra o próprio
-      // loop empurrar além do limite se `room` tiver sido otimista.
+      // Rechecks on every iteration: another call only enters after this one
+      // finishes (queue above), but this also guards against this very
+      // loop pushing past the limit if `room` was optimistic.
       if (pendingImages.length >= MAX_IMAGES) break;
       if (file.size > 15 * 1024 * 1024 || !/^image\/(?:jpeg|png|gif|webp|bmp|avif)$/i.test(file.type || "")) {
         throw new Error("Formato de imagem não permitido ou arquivo muito grande.");
@@ -557,20 +556,202 @@ anyFileInput.addEventListener("change", async () => {
   }
 });
 
-const lightboxOverlay = document.getElementById("lightbox-overlay");
-const lightboxImg     = document.getElementById("lightbox-img");
+const lightboxOverlay  = document.getElementById("lightbox-overlay");
+const lightboxViewport = document.getElementById("lightbox-viewport");
+const lightboxImg      = document.getElementById("lightbox-img");
+const lightboxShareBtn = document.getElementById("lightbox-share-btn");
+const lightboxDlBtn    = document.getElementById("lightbox-download-btn");
+
+// Zoom/pan state for the lightbox. Kept intentionally simple (no library):
+// scale clamped to [1, 4], pan clamped so the image can't be dragged
+// entirely off-screen, wheel + pinch (via two-pointer distance) +
+// double-click/double-tap-to-reset all funnel into the same applyTransform.
+let lbScale = 1, lbX = 0, lbY = 0;
+let lbPointers = new Map(); // pointerId -> {x,y}, for pinch-to-zoom
+let lbPinchStartDist = 0, lbPinchStartScale = 1;
+let lbPanStart = null; // {x,y,lbX,lbY} at drag start
+
+function applyLightboxTransform(snap = false) {
+  lightboxImg.classList.toggle("lightbox-snap", snap);
+  lightboxImg.style.transform = `translate(${lbX}px, ${lbY}px) scale(${lbScale})`;
+}
+
+function clampLightboxPan() {
+  if (!lightboxImg.naturalWidth || !lightboxViewport) return;
+  const vpRect = lightboxViewport.getBoundingClientRect();
+  const imgRect = lightboxImg.getBoundingClientRect();
+  // getBoundingClientRect already reflects the current transform, so the
+  // max allowed pan is just how far the (already-scaled) image overhangs
+  // the viewport on each axis - this stays correct across every aspect
+  // ratio without needing to know the image's native dimensions here.
+  const overflowX = Math.max(0, (imgRect.width - vpRect.width) / 2);
+  const overflowY = Math.max(0, (imgRect.height - vpRect.height) / 2);
+  lbX = Math.min(overflowX, Math.max(-overflowX, lbX));
+  lbY = Math.min(overflowY, Math.max(-overflowY, lbY));
+}
+
+function resetLightboxZoom() {
+  lbScale = 1; lbX = 0; lbY = 0;
+  applyLightboxTransform(true);
+}
+
 function openLightbox(src) {
   lightboxImg.src = src;
   lightboxOverlay.classList.add("show");
+  resetLightboxZoom();
+  if (lightboxDlBtn) lightboxDlBtn.disabled = false;
+  if (lightboxShareBtn) lightboxShareBtn.disabled = false;
 }
 function closeLightbox() {
   lightboxOverlay.classList.remove("show");
   lightboxImg.src = "";
+  resetLightboxZoom();
 }
 document.getElementById("lightbox-close").addEventListener("click", closeLightbox);
 lightboxOverlay.addEventListener("click", e => {
   if (e.target === lightboxOverlay) closeLightbox();
 });
+
+// Wheel = desktop zoom, centered roughly on the cursor.
+lightboxViewport.addEventListener("wheel", e => {
+  e.preventDefault();
+  const prevScale = lbScale;
+  lbScale = Math.min(4, Math.max(1, lbScale - e.deltaY * 0.0018 * lbScale));
+  // Re-centers the zoom on where the cursor actually is, not just the
+  // image center, so zooming in on a corner keeps that corner in view.
+  const rect = lightboxViewport.getBoundingClientRect();
+  const cx = e.clientX - rect.left - rect.width / 2;
+  const cy = e.clientY - rect.top - rect.height / 2;
+  const scaleDelta = lbScale / prevScale - 1;
+  lbX -= cx * scaleDelta / prevScale;
+  lbY -= cy * scaleDelta / prevScale;
+  if (lbScale === 1) { lbX = 0; lbY = 0; }
+  clampLightboxPan();
+  applyLightboxTransform(false);
+}, { passive: false });
+
+// Double-click (desktop) / double-tap (mobile, via two quick pointerup) to
+// toggle between 1x and 2x, matching common photo-viewer conventions.
+let lbLastTapTime = 0;
+lightboxViewport.addEventListener("pointerup", e => {
+  if (lbPointers.size > 0) return; // was a pinch/pan gesture ending, not a tap
+  const now = Date.now();
+  if (now - lbLastTapTime < 300) {
+    lbScale = lbScale > 1 ? 1 : 2;
+    lbX = 0; lbY = 0;
+    clampLightboxPan();
+    applyLightboxTransform(true);
+  }
+  lbLastTapTime = now;
+});
+
+// Unified pointer handling covers both mouse-drag-to-pan and touch
+// pinch-to-zoom/pan with the same code path (Pointer Events already
+// normalize mouse vs touch vs pen).
+lightboxViewport.addEventListener("pointerdown", e => {
+  lightboxViewport.setPointerCapture(e.pointerId);
+  lbPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (lbPointers.size === 2) {
+    const [p1, p2] = [...lbPointers.values()];
+    lbPinchStartDist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    lbPinchStartScale = lbScale;
+    lbPanStart = null;
+  } else if (lbPointers.size === 1 && lbScale > 1) {
+    lbPanStart = { x: e.clientX, y: e.clientY, lbX, lbY };
+    lightboxViewport.classList.add("panning");
+  }
+});
+lightboxViewport.addEventListener("pointermove", e => {
+  if (!lbPointers.has(e.pointerId)) return;
+  lbPointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (lbPointers.size === 2) {
+    const [p1, p2] = [...lbPointers.values()];
+    const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    if (lbPinchStartDist > 0) {
+      lbScale = Math.min(4, Math.max(1, lbPinchStartScale * (dist / lbPinchStartDist)));
+      clampLightboxPan();
+      applyLightboxTransform(false);
+    }
+  } else if (lbPanStart && lbScale > 1) {
+    lbX = lbPanStart.lbX + (e.clientX - lbPanStart.x);
+    lbY = lbPanStart.lbY + (e.clientY - lbPanStart.y);
+    clampLightboxPan();
+    applyLightboxTransform(false);
+  }
+});
+function lbEndPointer(e) {
+  lbPointers.delete(e.pointerId);
+  lightboxViewport.classList.remove("panning");
+  if (lbPointers.size < 2) lbPinchStartDist = 0;
+  if (lbPointers.size === 0) lbPanStart = null;
+  if (lbScale === 1) { lbX = 0; lbY = 0; applyLightboxTransform(true); }
+}
+lightboxViewport.addEventListener("pointerup", lbEndPointer);
+lightboxViewport.addEventListener("pointercancel", lbEndPointer);
+lightboxViewport.addEventListener("pointerleave", e => { if (lbPointers.has(e.pointerId)) lbEndPointer(e); });
+
+// Share/download both fetch the actual image bytes (never the possibly
+// low-res <img> src alone assumed sufficient) so a full-resolution file is
+// what's shared/saved, per "never download a thumbnail/preview".
+async function lightboxFetchBlob() {
+  const src = lightboxImg.src;
+  if (!src) return null;
+  const response = await fetch(src, { credentials: "include" });
+  if (!response.ok) return null;
+  return response.blob();
+}
+function lightboxSuggestedFileName(blob) {
+  const ext = (blob?.type || "image/png").split("/")[1]?.split("+")[0] || "png";
+  return `boreas-${Date.now()}.${ext}`;
+}
+if (lightboxShareBtn) {
+  lightboxShareBtn.addEventListener("click", async () => {
+    lightboxShareBtn.disabled = true;
+    try {
+      const blob = await lightboxFetchBlob();
+      if (!blob) throw new Error("no image");
+      const fileName = lightboxSuggestedFileName(blob);
+      const file = new File([blob], fileName, { type: blob.type || "image/png" });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file] });
+      } else if (navigator.share) {
+        // Some platforms support share() without file support - falls back
+        // to sharing the page/link rather than silently doing nothing.
+        await navigator.share({ url: lightboxImg.src });
+      } else {
+        // No Web Share API at all (most desktop browsers): fall back to a
+        // normal download instead of a dead button.
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = fileName;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      }
+    } catch (err) {
+      if (err?.name !== "AbortError") console.warn("[lightbox share]", err);
+    } finally {
+      lightboxShareBtn.disabled = false;
+    }
+  });
+}
+if (lightboxDlBtn) {
+  lightboxDlBtn.addEventListener("click", async () => {
+    lightboxDlBtn.disabled = true;
+    try {
+      const blob = await lightboxFetchBlob();
+      if (!blob) throw new Error("no image");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = lightboxSuggestedFileName(blob);
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    } catch (err) {
+      console.warn("[lightbox download]", err);
+    } finally {
+      lightboxDlBtn.disabled = false;
+    }
+  });
+}
 
 document.querySelectorAll("img").forEach(img => {
   img.addEventListener("contextmenu", e => e.preventDefault());

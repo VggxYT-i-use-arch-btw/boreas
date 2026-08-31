@@ -1,10 +1,11 @@
-// Boreas: camada de rede, cache e fila de sincronização.
+// Boreas: network layer, cache, and sync queue.
 
-// A API usa a mesma origem do documento; backend-config.js resolve a origem
-// atual, inclusive quando o Quick Tunnel recebe um hostname novo.
+// The API uses the same origin as the document; backend-config.js resolves
+// the current origin, including when the Quick Tunnel gets a new hostname.
 const BACKEND_URL = globalThis.BOREAS_BACKEND_URL;
 
-// Guarda a fila de escrita pendente em IndexedDB para que a aba e o Service Worker possam reenviar quando a conexão voltar.
+// Keeps the pending write queue in IndexedDB so the tab and the Service
+// Worker can resend it once the connection comes back.
 const SYNC_QUEUE_DB = "boreas_sync_queue_db";
 const SYNC_QUEUE_DB_VERSION = 2;
 const SYNC_META_STORE = "meta";
@@ -79,20 +80,20 @@ async function qdbGetAll() {
   });
 }
 
-// Pede pro navegador acordar o Service Worker (evento "sync") assim que a
-// conectividade voltar, mesmo que o app esteja fechado. Sem suporte (iOS
-// Safari não tem Background Sync), cai de volta no flushQueue() normal via
-// online/visibilitychange/interval - a fila em IndexedDB continua valendo
-// de qualquer forma, só não roda em background nesse caso.
+// Asks the browser to wake up the Service Worker (the "sync" event) as
+// soon as connectivity returns, even if the app is closed. Without support
+// (iOS Safari has no Background Sync), falls back to the normal
+// flushQueue() via online/visibilitychange/interval; the IndexedDB queue
+// still holds either way, it just won't run in the background in that case.
 async function registerBackgroundSync() {
   try {
     if (!("serviceWorker" in navigator)) return;
     const reg = await navigator.serviceWorker.ready;
     if (reg.sync) await reg.sync.register("boreas-flush-queue");
-  } catch (e) { /* Background Sync indisponível; os fallbacks continuam ativos. */ }
+  } catch (e) { /* Background Sync unavailable; the fallbacks stay active. */ }
 }
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js").catch(e => console.warn("[SW] registro falhou:", e.message));
+  navigator.serviceWorker.register("./sw.js").catch(e => console.warn("[SW] registration failed:", e.message));
 }
 
 // BoreasSync centralizes authenticated chats, memory, and usage calls.
@@ -100,9 +101,9 @@ if ("serviceWorker" in navigator) {
 // Local cache for read fallback.
 
 const BoreasSync = (() => {
-  // A identidade continua em cookie HttpOnly. Esta flag serve apenas para
-  // evitar chamadas obviamente desnecessárias antes da validação do servidor;
-  // ela nunca é uma credencial.
+  // Identity still lives in an HttpOnly cookie. This flag only avoids
+  // obviously unnecessary calls before the server validates the session;
+  // it's never treated as a credential.
   function isAuthed()  { return localStorage.getItem("boreas_authenticated") === "true"; }
   function accountScope() {
     const scope = String(localStorage.getItem("boreas_session_scope") || "").trim().toLowerCase();
@@ -129,6 +130,30 @@ const BoreasSync = (() => {
     if (!scopedKey) return undefined;
     try { const raw = localStorage.getItem(scopedKey); return raw ? JSON.parse(raw).v : undefined; }
     catch { return undefined; }
+  }
+  // The server never stores the real image, only the "[imagem]" text
+  // placeholder (the image itself lives only in local IndexedDB, referenced
+  // as "__idb:..."). Restore that reference over the placeholder so a fresh
+  // server read never overwrites it.
+  function reconcileImagePlaceholders(previous, incoming) {
+    if (!previous || !incoming) return incoming;
+    const prevMsgs = Array.isArray(previous.messages) ? previous.messages : [];
+    const nextMsgs = Array.isArray(incoming.messages) ? incoming.messages : [];
+    const merged = nextMsgs.map((m, i) => {
+      const prevM = prevMsgs[i];
+      if (!Array.isArray(m?.content) || !Array.isArray(prevM?.content)) return m;
+      let changed = false;
+      const content = m.content.map((part, j) => {
+        const prevPart = prevM.content[j];
+        const isPlaceholder = part?.type === "text" && part.text === "[imagem]";
+        const prevUrl = String(prevPart?.image_url?.url ?? "");
+        const prevIsImage = prevPart?.type === "image_url" && (prevUrl.startsWith("__idb:") || prevUrl.startsWith("data:"));
+        if (isPlaceholder && prevIsImage) { changed = true; return prevPart; }
+        return part;
+      });
+      return changed ? { ...m, content } : m;
+    });
+    return { ...incoming, messages: merged };
   }
   function cacheDel(key) {
     try { localStorage.removeItem(cacheKey(key)); } catch {}
@@ -196,16 +221,16 @@ const BoreasSync = (() => {
     }
   }
 
-  // Retry queue for failed writes - agora em IndexedDB (ver qdb* acima),
-  // pra sobreviver o suficiente pro Service Worker conseguir ler.
+  // Retry queue for failed writes, now in IndexedDB (see qdb* above), so it
+  // survives long enough for the Service Worker to read it.
   const MAX_QUEUE = 200;
-  const MAX_QUEUE_BYTES = 50 * 1024 * 1024; // cap por tamanho total além da contagem - um item com imagem em base64 pesa MBs
+  const MAX_QUEUE_BYTES = 50 * 1024 * 1024; // cap by total size on top of the count; an item with a base64 image weighs MBs
   async function queueWrite(path, method, body) {
-    // key só por "method + path" colidia sempre que o mesmo endpoint era
-    // chamado mais de uma vez offline (ex.: 3 chats novos = 3x "POST
-    // /chats", mesma key) - o qdbPut seguinte sobrescrevia o anterior e só
-    // o último sobrevivia pra sincronizar. Sufixo com timestamp+random
-    // garante uma key por chamada.
+    // A key built from just "method + path" collided whenever the same
+    // endpoint was called more than once offline (e.g. 3 new chats = 3x
+    // "POST /chats", same key); the next qdbPut overwrote the previous
+    // one, so only the last one survived to sync. A timestamp+random
+    // suffix guarantees one key per call.
     const key = method + " " + path + " " + Date.now() + "_" + Math.random().toString(36).slice(2);
     try {
       await qdbPut(key, {
@@ -216,7 +241,7 @@ const BoreasSync = (() => {
         accountScope: accountScope(),
         ts: Date.now(),
       });
-      // Limita o tamanho da fila de escrita no IndexedDB para evitar crescimento excessivo do armazenamento local.
+      // Caps the write queue's size in IndexedDB to avoid excessive local storage growth.
       const all = await qdbGetAll();
       let over = all.length > MAX_QUEUE;
       if (!over) {
@@ -236,23 +261,23 @@ const BoreasSync = (() => {
     let q;
     try { q = await qdbGetAll(); } catch { return; }
     if (!q.length) return;
-    // O email retornado pelo servidor é a fonte de verdade. localStorage pode
-    // estar desatualizado em outra aba; nunca use essa flag para decidir sob
-    // qual sessão um item offline será reenviado.
+    // The email returned by the server is the source of truth. localStorage
+    // may be stale in another tab; never use that flag to decide which
+    // session an offline item should be resent under.
     const currentScope = await serverAccountScope();
     if (!currentScope) return;
     const backendOrigin = new URL(BACKEND_URL || location.origin, location.origin).origin;
     for (const item of q) {
-      // Nunca reenvia uma escrita criada em outra conta. A fila é compartilhada
-      // pelo navegador, portanto a sessão atual não é identidade suficiente.
+      // Never resends a write created under a different account. The queue
+      // is shared by the browser, so the current session alone isn't proof of identity.
       if (item.accountScope !== currentScope) {
         try { await qdbDelete(item.key); } catch {}
         continue;
       }
-      // A URL completa gravada na fila pode apontar para um Quick Tunnel
-      // antigo. Nunca envie o corpo para esse hostname: ele pode ter sido
-      // encerrado ou até reassigned. Reconstrua o destino a partir do path
-      // e aceite apenas a origem atualmente servindo o app.
+      // The full URL stored in the queue may point at an old Quick Tunnel.
+      // Never send the body to that hostname; it may have been shut down
+      // or even reassigned. Rebuild the destination from the path and only
+      // accept the origin currently serving the app.
       let target;
       try { target = new URL(item.path || item.url || "/", BACKEND_URL || location.origin); } catch { target = null; }
       if (!target || target.origin !== backendOrigin) {
@@ -358,18 +383,22 @@ const BoreasSync = (() => {
     },
     async get(id) {
       const res = await request("/chats/" + encodeURIComponent(id), { retries: 1, timeoutMs: 4000 });
-      if (res.ok) { cacheSet("chat_" + id, res.data.chat); return res.data.chat; }
+      if (res.ok) {
+        const merged = reconcileImagePlaceholders(cacheGet("chat_" + id), res.data.chat);
+        cacheSet("chat_" + id, merged);
+        return merged;
+      }
       if (res.error === "unauthorized") return null;
       return cacheGet("chat_" + id) ?? null;
     },
-    // Permite pintar imediatamente uma conversa já visitada, sem esperar a
-    // rede. loadChat chama revalidate explicitamente depois da primeira pintura.
+    // Lets an already-visited conversation paint immediately without
+    // waiting for the network. loadChat calls revalidate explicitly right after the first paint.
     peek(id) { return cacheGet("chat_" + id) ?? null; },
     async revalidate(id, baseline = null) {
       const res = await request("/chats/" + encodeURIComponent(id), { retries: 1, timeoutMs: 4000 });
       if (!res.ok) return { chat: null, changed: false };
-      const fresh = res.data.chat;
       const previous = baseline ?? cacheGet("chat_" + id);
+      const fresh = reconcileImagePlaceholders(previous, res.data.chat);
       const changed = JSON.stringify(fresh ?? {}) !== JSON.stringify(previous ?? {});
       cacheSet("chat_" + id, fresh);
       return { chat: fresh, changed };
@@ -382,7 +411,7 @@ const BoreasSync = (() => {
     },
     // Retries upserts and queues them on failure.
 
-    async save(chat, { keepalive = false } = {}) {
+    async save(chat, { keepalive = false, localMessages = null } = {}) {
       const res = await request("/chats", { method: "POST", body: chat, keepalive, ...(keepalive ? { retries: 0 } : {}) });
       if (!res.ok && !["unauthorized", "session-changed"].includes(res.error)) queueWrite("/chats", "POST", chat);
       if (res.ok || res.error !== "unauthorized") {
@@ -391,8 +420,12 @@ const BoreasSync = (() => {
         // A late response from an older tab must not overwrite a newer
         // server snapshot. Equal timestamps are merged only for fields that
         // are absent in the incoming response.
+        // localMessages, when provided, keeps the "__idb:" image references
+        // for the local cache; chat.messages is the anonymized payload
+        // ("[imagem]") that was actually sent to the server.
+        const cachedChat = localMessages ? { ...chat, messages: localMessages } : chat;
         if (!previous?.updatedAt || !chat.updatedAt || String(chat.updatedAt) >= String(previous.updatedAt)) {
-          cacheSet(key, { ...previous, ...chat });
+          cacheSet(key, { ...previous, ...cachedChat });
         }
       }
       return res;
@@ -404,7 +437,7 @@ const BoreasSync = (() => {
       cacheDel("chat_" + id);
       return res;
     },
-    // Atualiza só o título do chat no servidor, sem tocar no histórico salvo.
+    // Updates only the chat's title on the server, without touching the saved history.
     async renameTitle(id, title) {
       const path = "/chats/" + encodeURIComponent(id) + "/title";
       const res = await request(path, { method: "PATCH", body: { title } });
@@ -413,8 +446,8 @@ const BoreasSync = (() => {
       if (cached && res.error !== "unauthorized") cacheSet("chat_" + id, { ...cached, title });
       return res;
     },
-    // Nunca é enfileirada pra retry - se falhar, o usuário decide se tenta
-    // de novo (é uma ação explícita, não um autosave silencioso).
+    // Never queued for retry; on failure, the user decides whether to try
+    // again (this is an explicit action, not a silent autosave).
     async resume(id) {
       return request("/chats/" + encodeURIComponent(id) + "/resume", { method: "POST", retries: 0, silent: true, timeoutMs: 45000 });
     },

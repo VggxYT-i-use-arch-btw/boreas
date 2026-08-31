@@ -1,7 +1,7 @@
 // Boreas frontend module: streaming state, reconnection, watchdogs, and stop controls.
 // Loaded as a classic script in the exact order declared by index.html.
 
-// Boreas: streaming, renderização, envio e regeneração.
+// Boreas: streaming, rendering, sending, and regeneration.
 
 let currentAbortController = null;
 
@@ -94,10 +94,10 @@ async function syncGenerationOnce(genId) {
   loading = true; showStopBtn();
   currentGenId = genId;
 
-  // A conexão pode cair depois de a resposta parcial já estar na tela. O
-  // endpoint de sync reenvia todos os chunks desde o começo; removemos apenas
-  // a linha marcada para esta geração antes de reconstruí-la, evitando uma
-  // segunda resposta visual com o mesmo conteúdo.
+  // The connection can drop after the partial response is already on
+  // screen. The sync endpoint resends every chunk from the start; only the
+  // row tagged for this generation is removed before rebuilding it, to
+  // avoid a second visual response with the same content.
   [...messagesEl.querySelectorAll(".msg-row.bot")]
     .filter(row => row.dataset.generationId === String(genId))
     .forEach(row => row.remove());
@@ -166,6 +166,16 @@ async function syncGenerationOnce(genId) {
         if (chunk.type === "file" && chunk.name) { ensureRow(); masterCol.appendChild(createFileCard(chunk.name, chunk.data, chunk.mime)); msgAttachments.push({ type: "file", name: chunk.name, data: chunk.data, mime: chunk.mime }); scrollToBottom(); continue; }
         if (chunk.type === "deep_research") { ensureRow(); renderDeepResearchCard(masterCol, chunk); if (chunk.done) msgAttachments = [...msgAttachments.filter(a => a.type !== "deep_research"), { ...chunk }]; continue; }
         if (chunk.type === "agentic_loop") { ensureRow(); renderAgenticLoopCard(masterCol, chunk); if (chunk.done) msgAttachments = [...msgAttachments.filter(a => a.type !== "agentic_loop"), { ...chunk }]; continue; }
+        if (chunk.type === "image_generation") {
+          ensureRow(); renderImageGenerationCard(masterCol, chunk);
+          if (chunk.status === "ready" || chunk.status === "failed") {
+            msgAttachments = [
+              ...msgAttachments.filter(a => !(a.type === "generated_image" && a.image_id === chunk.image_id)),
+              { type: "generated_image", image_id: chunk.image_id, status: chunk.status, aspect_ratio: chunk.aspect_ratio, width: chunk.width, height: chunk.height, is_edit: chunk.is_edit },
+            ];
+          }
+          continue;
+        }
         if (chunk.type === "ask_user_prompt") { ensureRow(); const _aupAns = await renderAskUserPromptCard(masterCol, chunk.promptId, chunk.questions); msgAttachments.push({ type: "ask_user_prompt", promptId: chunk.promptId, questions: chunk.questions, answers: _aupAns ?? null, timedOut: !_aupAns }); continue; }
         if (chunk.type === "step") {
           ensureRow(); responseBubble = null; segmentReply = "";
@@ -215,13 +225,13 @@ async function syncGenerationOnce(genId) {
     }
     if (sawDone || syncMissing) clearPendingGen();
     if (reply || msgAttachments.length) {
-      const sameContent = previousAssistant
-        && previousAssistant.content === reply
-        && (Array.isArray(previousAssistant.attachments) ? previousAssistant.attachments.length : 0) === msgAttachments.length;
-      if (sameContent) {
+      // Dedupe by genId rather than text equality, since the reconstructed
+      // reply can differ slightly from the original render.
+      const alreadyAppended = (previousAssistant?.genId === genId) || messages.some(m => m.role === "assistant" && m.genId === genId);
+      if (alreadyAppended) {
         masterRow?.remove();
       } else {
-        messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
+        messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), genId });
       }
       saveCurrentMessages();
       updateRegenerateAvailability();
@@ -254,9 +264,9 @@ function startElapsedTicker(getBubbleEl, startTime) {
   return () => clearInterval(intervalId); // stop() - idempotente
 }
 
-// Sem nenhum chunk do servidor (nem "gen_id") dentro desse prazo = geração
-// travada antes mesmo de começar. Aborta e deixa o usuário tentar de novo,
-// em vez de esperar o timeout genérico de 90s do fetch.
+// No server chunk at all (not even "gen_id") within this window means the
+// generation stalled before it even started. Aborts and lets the user
+// retry, instead of waiting for the fetch's generic 90s timeout.
 const NO_RESPONSE_TIMEOUT_MS = 20000;
 function startNoResponseWatchdog(_getBubbleEl, onExpire) {
   const timer = setTimeout(onExpire, NO_RESPONSE_TIMEOUT_MS);
@@ -279,8 +289,8 @@ function showNoResponseError(retryFn) {
   }, { once: true });
 }
 
-// O botão de envio volta sempre para o PNG oficial depois do modo "parar".
-// O modo parada continua usando o quadrado inline, que é um estado diferente.
+// The send button always reverts to the official PNG after "stop" mode.
+// Stop mode keeps using the inline square, a separate state.
 const SEND_ICON = `<img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/send_msg.png" alt="Enviar mensagem" draggable="false">`;
 const STOP_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="var(--bg)"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>`;
 

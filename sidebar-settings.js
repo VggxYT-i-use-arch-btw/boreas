@@ -1,8 +1,6 @@
 // Boreas frontend module: sidebar shell, settings navigation, profile, and capabilities.
 // Loaded as a classic script in the exact order declared by index.html.
 
-// Boreas: sidebar, menu de modelos e configurações.
-
 async function generateTitle(chatId, promptText) {
   try {
     const r = await fetch(BACKEND_URL + "/title", {
@@ -97,7 +95,7 @@ sidebarOverlay.addEventListener("click", closeSidebar);
 
 document.getElementById("sidebar-new-chat").addEventListener("click", async () => {
   saveCurrentMessages(); // salva a conversa anterior em segundo plano - não trava a criação da nova
-  const tierParaNovoChat = lockBar.classList.contains("show") ? "normal" : currentTier;
+  const tierParaNovoChat = lockBar.classList.contains("show") ? "horizon2" : currentTier;
   if (tierParaNovoChat !== currentTier) {
     currentTier = tierParaNovoChat;
     currentSpeed = TIER_SPEEDS[currentTier];

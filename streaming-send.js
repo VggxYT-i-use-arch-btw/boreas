@@ -52,15 +52,18 @@ async function send() {
 
   const userMsgIndex = messages.length;
   messages.push({ role: "user", content: userContent });
-  // A troca de conversa durante um stream substitui o array global. Preserve
-  // a referência para que a resposta tardia nunca seja salva no chat novo.
+  // Switching conversations mid-stream replaces the global array. Keeps
+  // this reference so a late response is never saved into the new chat.
   const streamMessages = messages;
   const streamChatId = activeChatId;
-  saveCurrentMessages();
+  // Awaited (with keepalive) before the generation stream opens: the server
+  // only learns about this message through this save, so it must land
+  // before the request can be interrupted by a background/reload.
+  await saveCurrentMessages({ keepalive: true });
 
-  // Mantém o conteúdo visível do anexo no mesmo caminho de renderização da
-  // mensagem. Antes, quando havia arquivo de texto, displayContent virava
-  // string vazia e o modelo recebia o arquivo, mas a bolha do usuário não.
+  // Keeps the attachment's visible content on the same rendering path as
+  // the message itself, so a text file attachment still shows in the
+  // user's bubble, not just in what the model receives.
   const displayContent = imagesSnapshot.length
     ? (text || "")
     : (fileSnapshot ? userContent : (typeof userContent === "string" ? userContent : text));
@@ -212,6 +215,24 @@ async function send() {
             continue;
           }
 
+          if (chunk.type === "tier_used") {
+            // Server may have escalated tier/speed/effort mid-generation
+            // (forward_message). Without this, currentTier/meta stay on
+            // the pre-escalation value and the next saveCurrentMessages()
+            // would send it back to the server, overwriting the correct
+            // tier that was just persisted after generation finished.
+            currentTier = chunk.tier ?? currentTier;
+            currentSpeed = chunk.speed ?? currentSpeed;
+            currentEffort = chunk.effort ?? currentEffort;
+            const activeId = localStorage.getItem(ACTIVE_KEY);
+            if (activeId && _chatsMeta[activeId]) {
+              _chatsMeta[activeId].tier = currentTier;
+              _chatsMeta[activeId].speed = currentSpeed;
+              _chatsMeta[activeId].effort = currentEffort;
+            }
+            continue;
+          }
+
           if (chunk.type === "token_exhausted") {
             console.warn(`⚠️ Token HF esgotado no servidor - ${chunk.remaining}/${chunk.total} restantes.`);
             continue;
@@ -222,13 +243,13 @@ async function send() {
             clearTimeout(thinkingTimer);
             ensureMasterRow();
             masterCol.querySelectorAll(".msg-actions").forEach(el => el.remove());
-            // Fecha a bolha de texto atual quando uma tool call chega, pra
-            // não misturar texto de antes e depois da tool na mesma bolha.
+            // Closes the current text bubble once a tool call arrives, so
+            // text before and after the tool doesn't mix in the same bubble.
             responseBubble = null; currentBubbleText = "";
             ensureToolActivityCard(masterCol, chunk, activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
-            // Widget rico (câmbio, gráfico, calculadora, imagens...) direto
-            // na conversa, fora do colapsável - não só escondido dentro do
-            // "N passos".
+            // Rich widget (currency, chart, calculator, images...) shown
+            // directly in the conversation, outside the collapsible, not
+            // just hidden inside the "N steps" accordion.
             if (chunk.output !== undefined && chunk.output !== "") {
               showInlineToolResult(masterCol, chunk.id, chunk.tool, chunk.output, responseBubble, chunk.value);
             }
@@ -237,28 +258,17 @@ async function send() {
             continue;
           }
 
-          if (chunk.type === "image") {
+          if (chunk.type === "image_generation") {
             clearTimeout(thinkingTimer);
             ensureMasterRow();
             removeTyping();
-            const loadingCard = masterCol.querySelector("#img-gen-loading");
-            if (loadingCard) loadingCard.remove();
-            const wrap = document.createElement("div"); wrap.className = "img-result-wrap";
-            const card = document.createElement("div"); card.className = "img-result-card";
-            const img  = document.createElement("img");
-            img.src = `data:image/jpeg;base64,${chunk.data}`;
-            img.alt = chunk.prompt ?? "Imagem gerada";
-            img.addEventListener("click", () => { window.open(img.src, "_blank"); });
-            card.appendChild(img);
-            const actRow = document.createElement("div"); actRow.className = "img-result-actions";
-            const dlBtn  = document.createElement("button"); dlBtn.className = "img-dl-btn";
-            dlBtn.textContent = "⬇ Baixar";
-            dlBtn.addEventListener("click", () => { const a = document.createElement("a"); a.href = img.src; a.download = "boreas-image.jpg"; a.click(); });
-            actRow.appendChild(dlBtn);
-            wrap.appendChild(card); wrap.appendChild(actRow);
-            masterCol.appendChild(wrap);
-            scrollToBottom();
-            reply = "[Imagem gerada]";
+            renderImageGenerationCard(masterCol, chunk);
+            if (chunk.status === "ready" || chunk.status === "failed") {
+              msgAttachments = [
+                ...msgAttachments.filter(a => !(a.type === "generated_image" && a.image_id === chunk.image_id)),
+                { type: "generated_image", image_id: chunk.image_id, status: chunk.status, aspect_ratio: chunk.aspect_ratio, width: chunk.width, height: chunk.height, is_edit: chunk.is_edit },
+              ];
+            }
             continue;
           }
 
@@ -304,7 +314,7 @@ async function send() {
               responseActions = actions;
               const copyBtn = document.createElement("button"); copyBtn.className = "msg-action-btn";
               copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copiar`;
-              // Usa _rawText para copiar o texto real da bolha sem ler o DOM completo.
+              // Uses _rawText to copy the bubble's real text without reading the full DOM.
               copyBtn.addEventListener("click", () => copyText(thisBubble._rawText ?? "", copyBtn));
               const regenBtn = document.createElement("button"); regenBtn.className = "msg-action-btn msg-regenerate-btn";
               regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
@@ -367,7 +377,10 @@ async function send() {
     }
 
     if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
-    messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
+    // genId on the message lets the reconnection flow (syncGenerationOnce)
+    // reliably detect whether this generation was already appended,
+    // instead of comparing text.
+    messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), ...(currentGenId ? { genId: currentGenId } : {}) });
     saveCurrentMessages();
     updateRegenerateAvailability();
     if (responseBubble && !responseBubble._rawText) responseBubble._rawText = reply;

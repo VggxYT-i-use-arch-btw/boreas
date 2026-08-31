@@ -1,4 +1,4 @@
-// Pequenas interações da camada visual nova. Não substitui os módulos de chat.
+// Small interactions for the new visual layer. Does not replace the chat modules.
 
 // Theme is currently fixed by the application shell, but old/local data can
 // still contain arbitrary values. Keep that state constrained before any

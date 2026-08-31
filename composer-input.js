@@ -1,4 +1,4 @@
-// Boreas: composer, formato do input, plugins e menções.
+// Boreas: composer, input formatting, plugins, and mentions.
 
 const modelPill  = document.getElementById("model-pill");
 const modelLabel = document.getElementById("model-label");
@@ -74,19 +74,24 @@ document.getElementById("effort-pill-btn")?.addEventListener("click", e => {
   effortSection?.classList.toggle("open");
 });
 
-document.querySelectorAll(".effort-option").forEach(btn => {
-  btn.addEventListener("click", e => {
-    e.stopPropagation();
-    if (!EFFORT_TIERS.includes(currentTier)) return; // section is hidden anyway, but guard just in case
-    if (!VALID_EFFORTS.includes(btn.dataset.effort)) return;
-    currentEffort = btn.dataset.effort;
-    document.querySelectorAll(".effort-option").forEach(b => b.classList.remove("active"));
-    btn.classList.add("active");
-    document.getElementById("effort-pill-btn-value").textContent = EFFORT_LABELS[currentEffort] ?? "Padrão";
-    localStorage.setItem((ACCOUNT_SCOPE ? "boreas_last_effort_" + ACCOUNT_SCOPE + "_" : "boreas_last_effort_unauthed_") + currentTier, currentEffort);
-    effortSection?.classList.remove("open");
-    saveCurrentMessages();
-  });
+// Delegated: the .effort-option buttons are regenerated per tier by
+// syncEffortUI() (each tier has its own set of levels), so they can't be
+// bound individually once at load time.
+document.getElementById("effort-list-inner")?.addEventListener("click", e => {
+  e.stopPropagation();
+  const btn = e.target.closest(".effort-option");
+  if (!btn) return;
+  const cfg = TIER_EFFORTS[currentTier];
+  if (!cfg) return;
+  const level = btn.dataset.effort;
+  if (!cfg.levels.includes(level)) return;
+  currentEffort = level;
+  document.querySelectorAll(".effort-option").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("effort-pill-btn-value").textContent = EFFORT_LABELS[currentEffort] ?? "Padrão";
+  localStorage.setItem((ACCOUNT_SCOPE ? "boreas_last_effort_" + ACCOUNT_SCOPE + "_" : "boreas_last_effort_unauthed_") + currentTier, currentEffort);
+  effortSection?.classList.remove("open");
+  saveCurrentMessages();
 });
 
 const speedDescEl = document.getElementById("speed-desc");
@@ -117,7 +122,7 @@ function updateImageAttach() {
 
 document.getElementById("lock-upgrade-btn")?.addEventListener("click", () => {
   const requested = document.getElementById("lock-upgrade-btn").dataset.switchTo;
-  const switchTo = Object.hasOwn(TIERS, requested) ? requested : "normal";
+  const switchTo = Object.hasOwn(TIERS, requested) ? requested : "horizon2";
   currentTier = switchTo;
   currentSpeed = TIER_SPEEDS[currentTier];
   currentEffort = EFFORT_TIERS.includes(currentTier) ? lastEffortFor(currentTier) : "default";
@@ -204,15 +209,10 @@ function getCollapsedWidth() {
     return _collapsedWidth;
   }
 
-  // Estamos no estado expandido (é justamente quando updateInputRadius()
-  // mais precisa medir "quanto mediria a caixa colapsada" pra decidir se dá
-  // pra encolher). Antes, isso caía no fallback `_collapsedWidth ?? clientWidth`
-  // e ficava lendo um valor cacheado antigo (ou, na primeira vez, o próprio
-  // clientWidth JÁ EXPANDIDO, que é bem mais largo que o colapsado). Isso
-  // fazia o cálculo de quebra de linha errar e a barra virar bolinha (999px)
-  // mesmo com texto que ainda precisa de 2 linhas, ou travar quadrada quando
-  // não devia. Tira a classe, mede de verdade, bota de volta - tudo síncrono,
-  // então o navegador nunca chega a pintar o estado intermediário.
+  // We're in the expanded state, exactly when updateInputRadius() needs to
+  // measure "how wide would the collapsed box be" to decide whether it can
+  // shrink. Removes the class, measures for real, restores it, all
+  // synchronously, so the browser never paints the intermediate state.
   row.classList.remove("expanded");
   const w = msgInput.clientWidth;
   row.classList.add("expanded");
@@ -260,7 +260,7 @@ function updateInputRadius() {
   }
 }
 
-// Liga o scroll da textarea só quando o texto passa da altura máxima.
+// Enables the textarea's scroll only once the text exceeds the max height.
 function syncInputOverflow() {
   const maxH = inputMaxHeight();
   msgInput.style.overflowY = msgInput.scrollHeight > maxH ? "auto" : "hidden";
@@ -308,7 +308,38 @@ const PLUGINS = [
     enabled: true,
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>`,
   },
+  {
+    // Frontend shortcut only - does not gate whether generate_image exists
+    // (see PARTE 18 of the original spec and chat-stream.js's
+    // imageGenerationTokenConfigured gate in buildToolsForCapabilities).
+    // Its enabled flag is set dynamically at load - see
+    // syncImageGenerationPluginAvailability below - to reflect whether the
+    // server actually has image generation configured right now, so the
+    // menu never offers something that would just fail.
+    id: "image_generation", label: "Gerar imagem", desc: "Sugere ao modelo gerar ou editar uma imagem agora",
+    enabled: false, // flips to true once syncImageGenerationPluginAvailability confirms the server has it configured
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`,
+  },
 ];
+
+// generate_image/edit_image only exist server-side when HF_IMG_GEN_TOKEN is
+// configured (see runtime.js's imageGenerationTokenConfigured gate) - the
+// "image_generation" plugin entry starts disabled and only flips on after
+// this confirms the feature is actually live, so the quick-action menu
+// never offers something that would just fail. Best-effort: on any error
+// (offline, endpoint unreachable) it silently leaves the entry disabled
+// rather than surfacing an error for a menu item nobody tapped yet.
+async function syncImageGenerationPluginAvailability() {
+  try {
+    const response = await fetch(`${BACKEND_URL}/status`);
+    if (!response.ok) return;
+    const data = await response.json();
+    const entry = PLUGINS.find(p => p.id === "image_generation");
+    if (entry) entry.enabled = Boolean(data?.imageGenerationAvailable);
+    if (mentionPopup?.classList.contains("open")) renderMentionPopup();
+  } catch {}
+}
+syncImageGenerationPluginAvailability();
 
 let activePlugin = null;   // id do plugin ativo pra próxima mensagem enviada
 let mentionStart = -1;     // índice do "@" que abriu o pop-up atual
@@ -320,7 +351,7 @@ const pluginPill        = document.getElementById("plugin-pill");
 const pluginPillLabel   = document.getElementById("plugin-pill-label");
 const pluginPillRemove  = document.getElementById("plugin-pill-remove");
 
-// Recalcula a posição do pop-up quando a visual viewport muda com o teclado.
+// Recalculates the popup's position when the visual viewport changes with the keyboard.
 function viewportHeight() {
   return window.visualViewport?.height ?? window.innerHeight;
 }
@@ -329,10 +360,10 @@ function positionMentionPopup() {
   const vh = viewportHeight();
   mentionPopup.style.left   = rect.left + "px";
   mentionPopup.style.width  = rect.width + "px";
-  // Clampa pra nunca ficar com bottom negativo (o que empurraria o popup
-  // pra fora da área visível, atrás do teclado) - se rect.top já estiver
-  // além da visual viewport (input escondido atrás do teclado), cola o
-  // popup rente ao rodapé visível em vez de extrapolar.
+  // Clamped so bottom never goes negative (which would push the popup
+  // outside the visible area, behind the keyboard). If rect.top is already
+  // past the visual viewport (input hidden behind the keyboard), pins the
+  // popup flush against the visible bottom edge instead of overshooting.
   const bottom = Math.max(8, vh - rect.top + 8);
   mentionPopup.style.bottom = bottom + "px";
 }
@@ -511,7 +542,7 @@ document.addEventListener("click", e => {
 
 msgInput.addEventListener("input", detectMention);
 window.addEventListener("resize", () => { if (mentionPopup.classList.contains("open")) positionMentionPopup(); });
-// Recalcula a posição do pop-up quando a visual viewport muda com o teclado.
+// Recalculates the popup's position when the visual viewport changes with the keyboard.
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", () => { if (mentionPopup.classList.contains("open")) positionMentionPopup(); });
   window.visualViewport.addEventListener("scroll", () => { if (mentionPopup.classList.contains("open")) positionMentionPopup(); });

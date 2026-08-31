@@ -236,12 +236,30 @@ img{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .attach-card-meta{font-size:10.5px;color:var(--text-faint);margin-top:1px}
 
 /* Image generation */
-.img-gen-card{background:var(--bg-elev);border:1px solid var(--border);border-radius:18px;padding:28px 24px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;width:260px;height:260px;flex-shrink:0}
+.img-gen-wrap{display:flex;flex-direction:column;align-items:stretch;gap:12px;max-width:340px}
+.img-gen-status{display:flex;align-items:center;gap:8px;color:var(--text-dim);font-size:13px;font-weight:500}
+.img-gen-card{position:relative;background:#161616;border:1px solid var(--border);border-radius:18px;overflow:hidden;width:100%;aspect-ratio:1/1;transition:aspect-ratio .35s cubic-bezier(.22,1,.36,1)}
+.img-gen-card[data-ratio="16:9"]{aspect-ratio:16/9}
+.img-gen-card[data-ratio="9:16"]{aspect-ratio:9/16;max-width:220px}
+.img-gen-card[data-ratio="4:3"]{aspect-ratio:4/3}
+.img-gen-card[data-ratio="3:4"]{aspect-ratio:3/4;max-width:240px}
+/* Subtle sheen sweeping across the dark placeholder - deliberately gentle
+   (long duration, low-contrast gradient) rather than a skeleton-loader
+   shimmer, per the "should not look aggressive" requirement. Pure CSS
+   transform/opacity so it's compositor-accelerated and cheap on mobile. */
+.img-gen-card::after{content:"";position:absolute;inset:0;background:linear-gradient(100deg,transparent 35%,rgba(255,255,255,.05) 50%,transparent 65%);background-size:200% 100%;animation:imgSheen 2.6s ease-in-out infinite}
 .img-gen-label{color:var(--text-faint);font-size:13px;letter-spacing:.06em}
 .img-gen-dots{display:inline-flex;gap:7px;align-items:center}
 .img-gen-dot{width:8px;height:8px;border-radius:50%;background:var(--hover);animation:imgDotPulse 1.4s ease-in-out infinite}
 .img-gen-dot:nth-child(2){animation-delay:.22s}.img-gen-dot:nth-child(3){animation-delay:.44s}
 @keyframes imgDotPulse{0%,80%,100%{opacity:.2;transform:scale(.8)}40%{opacity:1;transform:scale(1.1)}}
+@keyframes imgSheen{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.img-gen-card.img-gen-error::after,.img-gen-card.img-gen-expired::after{display:none}
+.img-gen-card.img-gen-error,.img-gen-card.img-gen-expired{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:20px;text-align:center}
+.img-gen-error-text,.img-gen-expired-text{color:var(--text-faint);font-size:12.5px;line-height:1.5;max-width:220px}
+.img-gen-error-icon,.img-gen-expired-icon{color:var(--text-ghost);width:28px;height:28px}
+.img-gen-card img{width:100%;height:100%;object-fit:cover;display:block;position:relative;z-index:1;opacity:0;transition:opacity .45s ease}
+.img-gen-card img.img-loaded{opacity:1}
 .img-result-wrap{display:flex;flex-direction:column;gap:7px;max-width:340px}
 .img-result-card{border-radius:16px;overflow:hidden;width:100%;cursor:zoom-in;box-shadow:0 4px 24px rgba(0,0,0,.5)}
 .img-result-card img{width:100%;height:auto;display:block}
@@ -264,10 +282,22 @@ img{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .preview-thumb .thumb-remove{position:absolute;top:-6px;right:-6px;width:20px;height:20px;border-radius:50%;background:var(--chip);border:1px solid var(--border);color:var(--text-dim);font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer}
 
 /* Image lightbox */
-#lightbox-overlay{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;padding:24px;animation:fadeIn .18s ease both}
+#lightbox-overlay{position:fixed;inset:0;z-index:500;background:rgba(0,0,0,.92);display:none;flex-direction:column;align-items:center;justify-content:center;padding:24px;animation:fadeIn .18s ease both}
 #lightbox-overlay.show{display:flex}
-#lightbox-overlay img{max-width:100%;max-height:100%;border-radius:8px;object-fit:contain}
-#lightbox-close{position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;cursor:pointer}
+#lightbox-viewport{position:relative;width:100%;flex:1;min-height:0;overflow:hidden;display:flex;align-items:center;justify-content:center;touch-action:none;cursor:grab}
+#lightbox-viewport.panning{cursor:grabbing}
+#lightbox-overlay img{max-width:100%;max-height:100%;border-radius:8px;object-fit:contain;transform-origin:center center;will-change:transform;user-select:none;-webkit-user-drag:none}
+/* Zoom/pan transform is applied via transform:translate()+scale() on the img
+   itself, updated from pointer/wheel/pinch handlers in attachments-images.js
+   - no CSS transition while actively dragging (would lag behind the
+   finger), but a short one when the double-tap/reset snaps back so that
+   doesn't feel abrupt. */
+#lightbox-overlay img.lightbox-snap{transition:transform .25s cubic-bezier(.22,1,.36,1)}
+#lightbox-close{position:absolute;top:max(16px,env(safe-area-inset-top));right:16px;width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.1);display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;cursor:pointer;z-index:2}
+#lightbox-actions{display:flex;gap:10px;padding-top:16px;padding-bottom:env(safe-area-inset-bottom);flex-shrink:0}
+#lightbox-actions button{display:flex;align-items:center;gap:7px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:10px;color:#fff;font-size:13px;font-weight:500;padding:9px 16px;cursor:pointer;transition:background .15s}
+#lightbox-actions button:hover{background:rgba(255,255,255,.14)}
+#lightbox-actions button:disabled{opacity:.4;cursor:default;pointer-events:none}
 
 /* Warning modal */
 #warn-overlay{display:none;position:fixed;inset:0;z-index:90;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);background:rgba(0,0,0,.68);align-items:center;justify-content:center;padding:24px;animation:fadeIn .25s ease both}

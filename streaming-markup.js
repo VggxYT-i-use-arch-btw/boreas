@@ -58,7 +58,7 @@ function createSourcesButton(sources) {
 }
 
 if (typeof DOMPurify !== 'undefined') {
-  // Normaliza os atributos target e rel dos links para manter a navegação segura.
+  // Normalizes links' target and rel attributes to keep navigation safe.
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     if (String(node.tagName ?? '').toUpperCase() === 'A' && node.hasAttribute('target')) {
       node.setAttribute('rel', 'noopener noreferrer');
@@ -97,12 +97,11 @@ function renderMarkdownNow(el, text) {
   try {
     if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
       const rawHtml = marked.parse(text);
-      // marked sempre devolve um "\n" sobrando no final do HTML. Isso vira um
-      // nó de texto solto depois da última tag, e como .bubble.user usa
-      // white-space:pre-wrap, esse \n é renderizado como uma linha em branco
-      // de verdade no final de TODA mensagem - por isso a bolha sempre
-      // parecia maior/mais alta do que o texto digitado precisava
-      // (confirmado: b.textContent vinha com "\n" no final no console).
+      // marked always leaves a trailing "\n" at the end of the HTML. This
+      // becomes a loose text node after the last tag, and since
+      // .bubble.user uses white-space:pre-wrap, that \n renders as a real
+      // blank line at the end of every message. Trimming avoids the bubble
+      // looking taller than the typed text needs.
       el.innerHTML = DOMPurify.sanitize(rawHtml, { ADD_ATTR: ['target', 'rel'] }).trim();
     } else {
 
@@ -154,12 +153,12 @@ function scheduleMarkdownRender(el, text) {
   _markdownRenderState.set(el, state);
 }
 
-// Cópia estática do TOOL_META (as outras instâncias são locais às funções de
-// streaming) só pra reconstruir a timeline de steps a partir do histórico
-// salvo, fora de qualquer stream ao vivo.
+// Static copy of TOOL_META (the other instances are local to the streaming
+// functions), just to rebuild the step timeline from saved history,
+// outside of any live stream.
 const TOOL_META_STATIC = { WEB_SEARCH: { icon: "🔍" }, WEB_FETCH: { icon: "🌐" }, BASH: { icon: "💻" }, DELETE: { icon: "🗑️" }, STR_REPLACE: { icon: "✏️" }, SEND_FILE: { icon: "📎" }, CREATE_FILE: { icon: "📄" }, MEMORY: { icon: "🧠" }, PREFERENCES: { icon: "⚙️" }, ASK_USER: { icon: "❓" }, CALCULATOR: { icon: "🧮" }, GRAPH: { icon: "📊" }, FORWARD_MESSAGE: { icon: "🚀" }, USE_PLUGIN: { icon: "🧩" }, DEEP_RESEARCH: { icon: "🔬" }, AGENTIC_LOOP: { icon: "🔁" }, IMAGE_SEARCH: { icon: "🔍" }, PRESENT_IMAGE: { icon: "🖼️" }, VIEW_CHATS: { icon: "🗂️" }, CURRENCY: { icon: "💱" } };
 
-// Mantém as ferramentas sensíveis como cartões fixos para não expor texto interno na interface.
+// Keeps sensitive tools as fixed cards so no internal text leaks into the UI.
 const PLUGIN_LABELS = { web_search: "Busca na Web", deep_thinking: "Pensamento Aprofundado", study: "Modo Estudo" };
 function isBadgeOnlyTool(tool) { return tool === "FORWARD_MESSAGE" || tool === "USE_PLUGIN"; }
 function taskItemLabel(tool, value, hasOutput) {
@@ -168,20 +167,20 @@ function taskItemLabel(tool, value, hasOutput) {
   return value;
 }
 
-// Preenche o corpo (expandido) de um task-item. Compartilhada por todos os
-// pontos de renderização (histórico, stream ao vivo, regeneração) - GRAPH é
-// especial e desenha um gráfico de verdade via Chart.js a partir do JSON
-// devolvido pelo backend; qualquer outra tool cai no par cmd/output em <pre>
-// de sempre. Idempotente: pode ser chamada de novo no mesmo body (ex.
-// quando o resultado final chega depois do "pendente") que ela reconstrói.
-// Monta o card visual (galeria de imagens / câmbio / gráfico) a partir do
-// output de uma tool - usado tanto no acordeão "Processo de pensamento"
-// quanto (via showInlineToolResult) direto na mensagem. Retorna null se a
-// tool não tem representação visual ou o JSON não é o esperado.
+// Fills in a task item's (expanded) body. Shared across every rendering
+// point (history, live stream, regeneration); GRAPH is special and draws a
+// real chart via Chart.js from the JSON the backend returns, while every
+// other tool falls back to the usual cmd/output pair in a <pre>. Idempotent:
+// can be called again on the same body (e.g. when the final result arrives
+// after the "pending" state) and it rebuilds.
+// Builds the visual card (image gallery / currency / chart) from a tool's
+// output; used both inside the "Thinking process" accordion and (via
+// showInlineToolResult) directly in the message. Returns null if the tool
+// has no visual representation or the JSON isn't in the expected shape.
 function buildToolResultVisual(tool, output, value) {
   if (!output) return null;
   if (tool === "CALCULATOR") {
-    // Renderiza a saída textual da calculadora como um cartão simples, sem esperar JSON.
+    // Renders the calculator's text output as a simple card, without expecting JSON.
     const lines = String(output).split("\n").filter(Boolean);
     if (!lines.length) return null;
     const wrap = document.createElement("div");
@@ -280,7 +279,8 @@ function buildToolResultVisual(tool, output, value) {
       const canvas = document.createElement("canvas");
       wrap.appendChild(canvas);
       if (!window.Chart) return null;
-      // Adia a criação do gráfico até o container estar no DOM e visível, para o Chart.js medir o tamanho correto.
+      // Defers chart creation until the container is in the DOM and
+      // visible, so Chart.js can measure the right size.
       requestAnimationFrame(() => {
         if (!canvas.isConnected) return;
         new Chart(canvas.getContext("2d"), {
@@ -298,12 +298,11 @@ function buildToolResultVisual(tool, output, value) {
   }
   return null;
 }
-// Mostra o resultado visual de uma tool direto na mensagem do modelo (não
-// só escondido dentro do acordeão "Processo de pensamento" - era o que o
-// usuário reportava: precisava clicar pra ver gráfico/câmbio/imagens).
-// container: onde inserir (masterCol/col). before: elemento pra inserir
-// antes dele (normalmente o responseBubble), ou null pra ir no final.
-// _shownIds evita duplicar o card se o mesmo step atualizar de novo.
+// Shows a tool's visual result directly in the model's message, instead of
+// only hidden inside the "Thinking process" accordion.
+// container: where to insert it (masterCol/col). before: an element to
+// insert it before (usually the responseBubble), or null to go at the end.
+// _shownIds avoids duplicating the card if the same step updates again.
 const _inlineToolShown = new WeakMap();
 function showInlineToolResult(container, stepId, tool, output, before, value) {
   if (!container || !stepId) return;

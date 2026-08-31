@@ -202,8 +202,8 @@ function applyFont(font) {
   const saved = localStorage.getItem("boreas_font");
   if (saved && saved !== "Inter") applyFont(saved);
 })();
-// O tema claro foi removido; elimina a preferência antiga sem afetar outras
-// configurações locais do usuário.
+// Light theme was removed; clears the old preference without affecting
+// other local user settings.
 try { localStorage.removeItem("boreas_theme"); } catch {}
 
 document.getElementById("sidebar-settings-btn").addEventListener("click", async () => {

@@ -19,16 +19,15 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
   const col = role === "bot" ? document.createElement("div") : null;
   if (col) col.className = "bot-col";
 
-  // Reconstrói a pill "Executando" com a timeline de task-items (tool calls
-  // individuais, cada um clicável/expansível com input+output) a partir do
-  // histórico salvo - mesma estrutura DOM que o streaming ao vivo monta,
-  // só que sem o estado "em progresso". Sem isso os steps só existiam
-  // durante a sessão em que foram gerados e sumiam no reload.
-  // Timeline única de "Processo de pensamento": um só botão que expande pra
-  // uma sequência cronológica real (raciocínio + cada tool call, na ordem
-  // em que aconteceram) - antes eram duas pills separadas (thinking-pill +
-  // tasks-pill com "N etapas"), o que ficava feio e redundante. Também
-  // Preserva a ordem cronológica real das chamadas, em vez de agrupar por tipo de ferramenta.
+  // Rebuilds the "Running" pill with the task-item timeline (individual
+  // tool calls, each clickable/expandable with input+output) from saved
+  // history, the same DOM structure live streaming builds, just without
+  // the "in progress" state.
+  // Single "Thinking process" timeline: one button that expands into a real
+  // chronological sequence (reasoning + each tool call, in the order they
+  // happened) instead of two separate pills (thinking-pill + tasks-pill
+  // "N steps"). Preserves the real chronological order of calls, instead
+  // of grouping by tool type.
   const hasThinking = typeof thinking === "string" && thinking.trim();
   const hasSteps = Array.isArray(steps) && steps.length;
   if (false && col && (hasThinking || hasSteps)) {
@@ -73,8 +72,8 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
           taskEl.appendChild(hdr); taskEl.appendChild(body);
           hdr.addEventListener("click", () => taskEl.classList.toggle("expanded"));
         } else { taskEl.appendChild(hdr); }
-        // Sem agrupar por tipo de tool - cada item vai direto na ordem em
-        // que a tool foi chamada, preservando a sequência real.
+        // No grouping by tool type; each item goes straight in the order
+        // the tool was called, preserving the real sequence.
         detail.appendChild(taskEl);
       });
     }
@@ -82,9 +81,9 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
     col.appendChild(pill); col.appendChild(detail);
   }
 
-  // Novo formato persistido: cada segmento de raciocínio e cada tool ocupa
-  // seu próprio lugar na conversa. Para chats antigos, reconstruímos a mesma
-  // separação com o thinking agregado e os steps conhecidos.
+  // Newer persisted format: each reasoning segment and each tool occupies
+  // its own place in the conversation. For older chats, rebuilds the same
+  // separation from the aggregated thinking and the known steps.
   if (col) {
     const sequence = Array.isArray(activity) && activity.length
       ? activity
@@ -107,9 +106,9 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
     finalizeThinkingSegment(activityState);
   }
 
-  // Reconstrói, a partir do histórico salvo, os cards de deep research/loop
-  // agêntico e os arquivos mandados nessa resposta - sem isso eles somem
-  // ao reabrir a conversa (só o texto puro sobrevive).
+  // Rebuilds the deep research/agentic loop cards and the files sent in
+  // this response from saved history, so they don't disappear when the
+  // conversation is reopened (only plain text would otherwise survive).
   if (col && Array.isArray(attachments) && attachments.length) {
     attachments.forEach(a => {
       if (a.type === "file") col.appendChild(createFileCard(a.name, a.data, a.mime));
@@ -170,14 +169,13 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
           bubble.appendChild(rest);
         }
       } else {
-        // Mensagens do usuário também aceitam Markdown. O renderer já passa
-        // pelo mesmo marked + DOMPurify usado nas respostas do Boreas.
-        // IMPORTANTE: nunca chamar renderMarkdown(bubble, ...) direto aqui -
-        // renderMarkdownNow faz `el.innerHTML = ...`, e se a bubble já tem o
-        // grid de imagens anexado (bloco acima), isso apaga o grid inteiro.
-        // Era por isso que a imagem sumia da bolha sempre que a mensagem
-        // tinha legenda (o modelo via a imagem via API normalmente, só a
-        // UI que perdia ela). Renderiza num filho separado.
+        // User messages also support Markdown, through the same
+        // marked + DOMPurify renderer used for Boreas's replies.
+        // IMPORTANT: never call renderMarkdown(bubble, ...) directly here;
+        // renderMarkdownNow does `el.innerHTML = ...`, and if the bubble
+        // already has the image grid attached (block above), that wipes
+        // out the whole grid. Rendered into a separate child element to
+        // keep the image grid intact alongside a caption.
         const textEl = document.createElement("div");
         renderMarkdown(textEl, content);
         bubble.appendChild(textEl);
@@ -192,7 +190,7 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
     const copyBtn = document.createElement("button");
     copyBtn.className = "msg-action-btn";
     copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copiar`;
-    // Usa ?? para preservar mensagens vazias e evitar ler o DOM por engano.
+    // Uses ?? to preserve empty messages and avoid accidentally reading the DOM.
     copyBtn.addEventListener("click", () => copyText(bubble._rawText ?? "", copyBtn));
     const regenBtn = document.createElement("button");
     regenBtn.className = "msg-action-btn msg-regenerate-btn";
@@ -229,9 +227,10 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
   return bubble;
 }
 
-// Só a resposta que ocupa o último slot do histórico pode ser regenerada.
-// O servidor repete essa validação com o chat persistido; esta camada existe
-// para manter o histórico visual coerente e não oferecer ações antigas.
+// Only the response occupying the last slot in the history can be
+// regenerated. The server repeats this same check against the persisted
+// chat; this layer exists to keep the visual history consistent and avoid
+// offering stale actions.
 function updateRegenerateAvailability() {
   const rows = [...messagesEl.querySelectorAll(".msg-row.bot")];
   const latestIndex = messages.length - 1;
@@ -313,7 +312,7 @@ function editUserMessage(userRow, text, images) {
   messages.splice(msgIdx);
   saveCurrentMessages();
 
-  // Recuar o cursor de memória faz a próxima atualização reprocessar o trecho removido.
+  // Rewinding the memory cursor makes the next update reprocess the removed part.
   const idAtEdit = localStorage.getItem(ACTIVE_KEY);
   if (idAtEdit && _chatsMeta[idAtEdit] && (_chatsMeta[idAtEdit].memoryProcessedUpTo ?? 0) > msgIdx) {
     _chatsMeta[idAtEdit].memoryProcessedUpTo = msgIdx;
@@ -348,7 +347,7 @@ async function retryFromUser(userRow) {
 
   messages.splice(msgIdx + 1);
 
-  // Usa a mesma leitura segura de texto aplicada em editUserMessage.
+  // Same rewind logic as editUserMessage, applied to the retry point.
   const idAtRetry = localStorage.getItem(ACTIVE_KEY);
   if (idAtRetry && _chatsMeta[idAtRetry] && (_chatsMeta[idAtRetry].memoryProcessedUpTo ?? 0) > msgIdx + 1) {
     _chatsMeta[idAtRetry].memoryProcessedUpTo = msgIdx + 1;

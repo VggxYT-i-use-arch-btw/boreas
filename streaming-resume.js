@@ -185,6 +185,18 @@ async function resumePending(pluginOverride) {
             if (chunk.done) msgAttachments = [...msgAttachments.filter(a => a.type !== "agentic_loop"), { ...chunk }];
             continue;
           }
+          if (chunk.type === "image_generation") {
+            clearTimeout(thinkingTimer);
+            ensureMasterRowR();
+            renderImageGenerationCard(masterCol, chunk);
+            if (chunk.status === "ready" || chunk.status === "failed") {
+              msgAttachments = [
+                ...msgAttachments.filter(a => !(a.type === "generated_image" && a.image_id === chunk.image_id)),
+                { type: "generated_image", image_id: chunk.image_id, status: chunk.status, aspect_ratio: chunk.aspect_ratio, width: chunk.width, height: chunk.height, is_edit: chunk.is_edit },
+              ];
+            }
+            continue;
+          }
           if (chunk.type === "ask_user_prompt") {
             clearTimeout(thinkingTimer);
             ensureMasterRowR();
@@ -246,7 +258,7 @@ async function resumePending(pluginOverride) {
               responseActions = actions;
               const copyBtn = document.createElement("button"); copyBtn.className = "msg-action-btn";
               copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copiar`;
-              // Usa _rawText para copiar o texto real da bolha sem ler o DOM completo.
+              // Uses _rawText to copy the bubble's real text without reading the full DOM.
               copyBtn.addEventListener("click", () => copyText(responseBubble._rawText ?? "", copyBtn));
               const regenBtn = document.createElement("button"); regenBtn.className = "msg-action-btn msg-regenerate-btn";
               regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
@@ -321,10 +333,10 @@ async function resumePending(pluginOverride) {
     }).catch(() => {});
   }
 
-  // Ao abrir o app, só retoma um chat salvo quando existe uma geração pendente; caso contrário, começa um chat novo.
+  // On app open, only resumes a saved chat when a pending generation exists; otherwise starts a new chat.
   const pendingBoot = getPendingGen();
-  // O índice remoto pode chegar depois do primeiro paint; o chat pendente é
-  // uma chave persistida independente do timing da sidebar.
+  // The remote index can arrive after the first paint; the pending chat is
+  // a persisted key independent of the sidebar's timing.
   const shouldResumePendingChat = pendingBoot?.genId && pendingBoot.chatId;
 
   if (shouldResumePendingChat) {
@@ -335,7 +347,7 @@ async function resumePending(pluginOverride) {
   }
 
   const pending = getPendingGen();
-  // Mostra o banner de sincronização quando existe uma geração pendente que ainda pode ser retomada.
+  // Shows the sync banner when a pending generation still exists that can be resumed.
   if (pending?.genId && pending.chatId === localStorage.getItem(ACTIVE_KEY)) {
     showSyncBanner(pending.genId);
     setTimeout(() => {

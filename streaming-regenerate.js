@@ -35,8 +35,8 @@ async function regenerate(botRow, botBubble, actionsEl) {
 
   const col = botRow.querySelector(".bot-col");
   if (col) {
-    // Regeneração começa uma sequência limpa; isso também remove todos os
-    // segmentos de reasoning, tools e bolhas intermediárias da resposta anterior.
+    // Regeneration starts a clean sequence; this also removes every
+    // reasoning segment, tool, and intermediate bubble from the previous response.
     col.replaceChildren();
     botBubble = document.createElement("div");
     botBubble.className = "bubble bot";
@@ -132,6 +132,18 @@ async function regenerate(botRow, botBubble, actionsEl) {
             continue;
           }
 
+          if (chunk.type === "image_generation") {
+            clearTimeout(thinkingTimer);
+            renderImageGenerationCard(col, chunk);
+            if (chunk.status === "ready" || chunk.status === "failed") {
+              msgAttachments = [
+                ...msgAttachments.filter(a => !(a.type === "generated_image" && a.image_id === chunk.image_id)),
+                { type: "generated_image", image_id: chunk.image_id, status: chunk.status, aspect_ratio: chunk.aspect_ratio, width: chunk.width, height: chunk.height, is_edit: chunk.is_edit },
+              ];
+            }
+            continue;
+          }
+
           if (chunk.type === "ask_user_prompt") {
             clearTimeout(thinkingTimer);
             const _aupAns = await renderAskUserPromptCard(col, chunk.promptId, chunk.questions);
@@ -210,7 +222,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
 
     if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
     if (reply || msgAttachments.length) {
-      messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
+      messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), ...(currentGenId ? { genId: currentGenId } : {}) });
       saveCurrentMessages();
       updateRegenerateAvailability();
     }

@@ -70,9 +70,9 @@ async function loadUsageStats() {
 }
 
 document.getElementById("settings-logout-btn").addEventListener("click", async () => {
-  // Invalida a sessão no servidor quando possível. O carregamento da fila e
-  // das gerações pendentes também é interrompido abaixo antes de trocar de
-  // conta neste navegador.
+  // Invalidates the session on the server when possible. Loading the queue
+  // and pending generations is also stopped below before switching
+  // accounts on this browser.
   if (typeof BoreasSync !== "undefined" && BoreasSync.isAuthed()) {
     const result = await BoreasSync.request("/logout", { method: "POST", retries: 0, silent: true, keepalive: true, timeoutMs: 10000 });
     if (!result.ok && result.error !== "unauthorized") {
@@ -177,10 +177,10 @@ document.getElementById("rename-overlay").addEventListener("click", e => {
     document.getElementById("rename-cancel").click();
 });
 
-// "Resumir conversa" - trava a tela com um popup enquanto o backend resume
-// o histórico salvo do chat (pode levar alguns segundos, é uma chamada real
-// de modelo). Ao terminar, se o chat resumido é o que está aberto agora,
-// recarrega ele do servidor pra refletir o novo histórico compactado.
+// "Summarize conversation": locks the screen with a popup while the
+// backend summarizes the chat's saved history (can take a few seconds,
+// it's a real model call). When done, if the summarized chat is the one
+// currently open, reloads it from the server to reflect the new compacted history.
 function showResumeResult(title, desc) {
   document.getElementById("resume-processing").style.display = "none";
   document.getElementById("resume-result-title").textContent = title;
@@ -218,8 +218,8 @@ async function resumeConversation(chatId) {
     `${messagesCompacted} mensagem(ns) antiga(s) foram condensadas - histórico ${pct > 0 ? `~${pct}% menor` : "atualizado"}.`
   );
 
-  // Se o chat resumido é o que está aberto agora, recarrega pra refletir o
-  // histórico novo. Se for outro chat da sidebar, não mexe na tela atual.
+  // If the summarized chat is the one currently open, reloads it to
+  // reflect the new history. If it's another chat in the sidebar, leaves the current screen alone.
   if (localStorage.getItem(ACTIVE_KEY) === chatId) {
     await loadChat(chatId);
   }
@@ -228,8 +228,8 @@ document.getElementById("resume-close-btn").addEventListener("click", () => {
   document.getElementById("resume-overlay").classList.remove("show");
 });
 document.getElementById("resume-overlay").addEventListener("click", e => {
-  // Só fecha clicando fora depois que o resultado já apareceu - enquanto
-  // está processando, fica travado de propósito (é o comportamento pedido).
+  // Only closes on an outside click once the result is already shown;
+  // while processing, it stays locked on purpose (the intended behavior).
   if (e.target === document.getElementById("resume-overlay") &&
       document.getElementById("resume-result").style.display !== "none") {
     document.getElementById("resume-overlay").classList.remove("show");
