@@ -268,6 +268,8 @@ img{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 .img-dl-btn:hover{background:var(--hover)}
 
 /* Typing dots */
+.work-status-label{color:rgba(120,180,220,0.4);font-size:12px;letter-spacing:0.08em}
+.work-status-elapsed{color:rgba(100,160,200,0.35);font-size:11px;margin-left:5px}
 .thinking-dot,.dot{width:5px;height:5px;border-radius:50%;background:var(--hover);animation:blink 1.2s infinite ease-in-out;flex-shrink:0}
 .dot{width:6px;height:6px}
 .thinking-dot:nth-child(2),.dot:nth-child(2){animation-delay:.2s}

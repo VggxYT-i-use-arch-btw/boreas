@@ -72,7 +72,7 @@ async function resumePending(pluginOverride) {
     const tr = document.getElementById("typing-row");
     if (tr) {
       const b = tr.querySelector(".bubble");
-      if (b) b.innerHTML = `<span style="color:rgba(120,180,220,0.4);font-size:12px;letter-spacing:0.08em">Em trabalho</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
+      if (b) b.innerHTML = `<span class="work-status-label">Em trabalho</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
     }
   }, 1000);
 

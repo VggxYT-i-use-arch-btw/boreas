@@ -160,7 +160,7 @@ button:active { transform: scale(.97); }
 #messages { max-width: 920px; padding: 30px clamp(16px, 4vw, 48px) 18px; overscroll-behavior: contain; touch-action: pan-y; }
 .empty-state { gap: 11px; padding: 12vh 0 10vh; }
 .empty-logo-img { width: 92px; height: 92px; filter: drop-shadow(0 16px 28px rgba(139,92,246,.25)); opacity: .96; }
-.empty-eyebrow { color: var(--accent-text); font-size: 11px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+.empty-eyebrow { color: var(--accent-text); font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .empty-text { max-width: 620px; font-size: clamp(27px, 4vw, 42px); line-height: 1.12; letter-spacing: -.055em; font-weight: 700; }
 .empty-subtitle { max-width: 500px; color: var(--text-faint); font-size: 14px; text-align: center; }
 .msg-row { margin-bottom: 22px; }
@@ -195,7 +195,7 @@ button:active { transform: scale(.97); }
 .sidebar-new-chat:hover { background: rgba(139,92,246,.18); }
 .sidebar-projeto { margin-top: 4px; color: var(--text-dim); background: var(--surface); }
 .sidebar-projeto:hover { color: var(--text); background: var(--hover); }
-.sidebar-section-label { padding: 17px 5px 7px; font-size: 10px; letter-spacing: .12em; color: var(--text-ghost); }
+.sidebar-section-label { padding: 17px 5px 7px; font-size: 10px; letter-spacing: .06em; color: var(--text-ghost); }
 .sidebar-search { display: flex; align-items: center; gap: 9px; margin: 0 2px 8px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: 13px; color: var(--text-faint); background: var(--surface); }
 .sidebar-search:focus-within { border-color: rgba(167,139,250,.45); color: var(--text-dim); }
 .sidebar-search input { min-width: 0; width: 100%; border: 0; outline: 0; color: var(--text); background: transparent; font-size: 12px; }
@@ -378,7 +378,7 @@ button:active { transform: scale(.97); }
 }
 #usage-modal-overlay.show #usage-modal { transform: translateY(0) scale(1); }
 .usage-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 20px 22px 17px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
-.usage-modal-kicker { color: var(--accent-text); font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+.usage-modal-kicker { color: var(--accent-text); font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 #usage-modal-title { margin: 4px 0 0; color: var(--text); font-size: 22px; letter-spacing: -.045em; }
 #usage-modal-close { width: 34px; height: 34px; border: 1px solid var(--border-soft); border-radius: 11px; color: var(--text-dim); background: var(--surface); cursor: pointer; }
 #usage-modal-close:hover { color: var(--text); background: var(--hover); }

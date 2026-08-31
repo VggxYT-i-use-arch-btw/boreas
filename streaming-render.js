@@ -259,7 +259,7 @@ function startElapsedTicker(getBubbleEl, startTime) {
     const b = getBubbleEl();
     if (!b || !b.innerHTML.includes("Em trabalho")) return;
     const elapsed = Math.round((Date.now() - startTime) / 1000);
-    b.innerHTML = `<span style="color:rgba(120,180,220,0.4);font-size:12px;letter-spacing:0.08em">Em trabalho</span><span style="color:rgba(100,160,200,0.35);font-size:11px;margin-left:5px">${elapsed}s</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
+    b.innerHTML = `<span class="work-status-label">Em trabalho</span><span class="work-status-elapsed">${elapsed}s</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
   }, 1000);
   return () => clearInterval(intervalId); // stop() - idempotente
 }
