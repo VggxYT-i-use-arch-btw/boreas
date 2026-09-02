@@ -56,25 +56,33 @@ async function send() {
   // this reference so a late response is never saved into the new chat.
   const streamMessages = messages;
   const streamChatId = activeChatId;
-  // Awaited (with keepalive) before the generation stream opens: the server
-  // only learns about this message through this save, so it must land
-  // before the request can be interrupted by a background/reload.
-  await saveCurrentMessages({ keepalive: true });
 
-  // Keeps the attachment's visible content on the same rendering path as
-  // the message itself, so a text file attachment still shows in the
-  // user's bubble, not just in what the model receives.
+  // Rendered optimistically, before the network round-trip below - the
+  // user's own message should never wait on a server response to appear
+  // in the chat (was the ~200ms+ visible delay, worse on slow connections).
+  const fileBlockForDisplay = fileSnapshot
+    ? `[Arquivo: ${fileSnapshot.name}]\n\`\`\`\n${fileSnapshot.content}\n\`\`\``
+    : null;
   const displayContent = imagesSnapshot.length
-    ? (text || "")
+    ? (fileBlockForDisplay ? `${fileBlockForDisplay}${text ? `\n\n${text}` : ""}` : (text || ""))
     : (fileSnapshot ? userContent : (typeof userContent === "string" ? userContent : text));
   appendMessage("user", displayContent, imagesSnapshot, userMsgIndex);
-
-  if (isFirstMessage && (text || fileSnapshot) && activeChatId) generateTitle(activeChatId, text || fileSnapshot.name);
 
   pendingImages = []; pendingFile = null;
   renderPreviewThumbs();
   previewWrap.querySelector("#file-name-label")?.remove();
   showTyping();
+
+  // Awaited (with keepalive) before the generation stream opens: the server
+  // only learns about this message through this save, so it must land
+  // before the request can be interrupted by a background/reload. This no
+  // longer blocks the message bubble above, which is already on screen.
+  await saveCurrentMessages({ keepalive: true });
+
+  if (isFirstMessage && activeChatId) {
+    const titleSeed = text || fileSnapshot?.name || (imagesSnapshot.length ? "Imagem enviada" : "");
+    if (titleSeed) generateTitle(activeChatId, titleSeed);
+  }
 
   let thinkingTimer = setTimeout(() => {
     const tr = document.getElementById("typing-row");
@@ -310,15 +318,17 @@ async function send() {
               responseBubble = document.createElement("div"); responseBubble.className = "bubble bot";
               const thisBubble = responseBubble; // Captura a bolha atual antes de ela mudar depois de uma tool call.
               masterCol.appendChild(responseBubble);
-              const actions = document.createElement("div"); actions.className = "msg-actions";
+              const actions = document.createElement("div"); actions.className = "msg-actions streaming";
               responseActions = actions;
               const copyBtn = document.createElement("button"); copyBtn.className = "msg-action-btn";
               copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copiar`;
               // Uses _rawText to copy the bubble's real text without reading the full DOM.
               copyBtn.addEventListener("click", () => copyText(thisBubble._rawText ?? "", copyBtn));
+              copyBtn.disabled = true;
               const regenBtn = document.createElement("button"); regenBtn.className = "msg-action-btn msg-regenerate-btn";
               regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
               regenBtn.addEventListener("click", () => regenerate(masterRow, thisBubble, actions));
+              regenBtn.disabled = true;
               actions.appendChild(copyBtn); actions.appendChild(regenBtn);
 
               if (pendingSources?.length) actions.appendChild(createSourcesButton(pendingSources));
@@ -358,6 +368,11 @@ async function send() {
     }
 
     removeTyping();
+
+    if (responseActions) {
+      responseActions.classList.remove("streaming");
+      responseActions.querySelectorAll(".msg-action-btn").forEach(btn => { btn.disabled = false; });
+    }
 
     if (!responseBubble && reply) {
       ensureMasterRow();

@@ -93,6 +93,7 @@ const MARKDOWN_RENDER_INTERVAL_MS = 33;
 
 function renderMarkdownNow(el, text) {
   if (!el || el._renderedMarkdownText === text) return;
+  const grew = typeof el._renderedMarkdownText === "string" && text.startsWith(el._renderedMarkdownText);
   el._renderedMarkdownText = text;
   try {
     if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
@@ -124,6 +125,26 @@ function renderMarkdownNow(el, text) {
   } catch(e) {
 
     el.textContent = text;
+  } finally {
+    // Smooth generation fade-in: markdown must be re-parsed on the full
+    // accumulated text each render (an open "**" mid-word breaks the
+    // parser otherwise), so this can't be genuinely append-only at the DOM
+    // node level without risking broken formatting. Instead, a short CSS
+    // opacity fade is applied to the whole bubble on every render where the
+    // text actually grew (never on a no-op re-render, and never on edits/
+    // shrinks, which aren't streaming growth). Pure opacity, no filter/blur
+    // per the performance notes; will-change is set only for the animation
+    // window and cleared right after.
+    if (grew && el.isConnected) {
+      el.classList.remove("stream-fade-in");
+      // Forces a reflow so the animation restarts even if the previous one
+      // is still finishing - without this, rapid renders (every ~33ms)
+      // would just no-op the class toggle and never re-trigger the fade.
+      void el.offsetWidth;
+      el.classList.add("stream-fade-in");
+      clearTimeout(el._streamFadeCleanup);
+      el._streamFadeCleanup = setTimeout(() => el.classList.remove("stream-fade-in"), 220);
+    }
   }
 }
 

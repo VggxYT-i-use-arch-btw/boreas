@@ -630,8 +630,8 @@ function renderAgenticLoopCard(col, chunk) {
   scrollToBottom();
 }
 
-const IMG_GEN_ERROR_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>`;
-const IMG_GEN_EXPIRED_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+const IMG_GEN_ERROR_ICON = `<svg class="img-gen-error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>`;
+const IMG_GEN_EXPIRED_ICON = `<svg class="img-gen-expired-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
 const IMG_GEN_STATUS_LABELS = {
   improving_prompt: "Melhorando seu prompt",
   generating: "Criando sua imagem",
@@ -699,7 +699,16 @@ function renderImageGenerationCard(col, chunk) {
       card.classList.add("img-gen-loaded");
       requestAnimationFrame(() => img.classList.add("img-loaded"));
     }, { once: true });
-    img.addEventListener("error", () => {
+    img.addEventListener("error", async () => {
+      // Distinguishes "expired" (410, expected after 30 days) from a real
+      // load failure - the <img> error event alone doesn't carry the HTTP
+      // status, so a HEAD request is needed to tell them apart.
+      let status = null;
+      try {
+        const headRes = await fetch(img.src, { method: "HEAD", credentials: "include" });
+        status = headRes.status;
+      } catch {}
+      if (status === 410) { markImageGenerationExpired(col, chunk.image_id); return; }
       card.classList.add("img-gen-error");
       card.innerHTML = `${IMG_GEN_ERROR_ICON}<span class="img-gen-error-text">A imagem foi gerada, mas não carregou. Tente reabrir a conversa.</span>`;
     }, { once: true });

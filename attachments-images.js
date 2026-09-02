@@ -105,7 +105,12 @@ function createFileCard(name, b64, mime) {
       const raw = String(b64 ?? "");
       if (raw.length > 24 * 1024 * 1024) throw new Error("arquivo grande demais");
       const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
-      const url = URL.createObjectURL(new Blob([bytes], { type: mime || "application/octet-stream" }));
+      // Defense in depth for #18 (mojibake on download): if a text MIME
+      // type ever arrives without a charset, add utf-8 here too instead of
+      // trusting the browser to guess correctly.
+      let blobType = mime || "application/octet-stream";
+      if (/^text\//i.test(blobType) && !/charset=/i.test(blobType)) blobType += "; charset=utf-8";
+      const url = URL.createObjectURL(new Blob([bytes], { type: blobType }));
       const link = document.createElement("a");
       link.href = url;
       link.download = downloadName;
@@ -348,12 +353,12 @@ async function compressImage(file) {
         reject(new Error("Imagem muito grande para processar com segurança."));
         return;
       }
-      const scale = Math.min(1, 600 / Math.max(img.width, img.height));
-      const canvas = document.createElement("canvas");
-      canvas.width  = Math.round(img.width  * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-      resolve(canvas.toDataURL("image/jpeg", 0.8));
+      // No resize/re-encode - the original file bytes go to the model
+      // as-is, at full resolution and original quality.
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error(`Não foi possível ler "${file.name}" - formato não suportado (tente JPG/PNG) ou arquivo corrompido.`));
+      reader.readAsDataURL(file);
     };
     img.onerror = () => {
       cleanup();
@@ -407,7 +412,6 @@ async function addPendingImagesLocked(files) {
     if (room <= 0) { alert(`Você só pode enviar até ${MAX_IMAGES} fotos por vez.`); return; }
     const toAdd = Array.from(files).slice(0, room);
     if (files.length > toAdd.length) alert(`Você só pode enviar até ${MAX_IMAGES} fotos por vez. Só as ${toAdd.length} primeiras foram adicionadas.`);
-    pendingFile = null;
     for (const file of toAdd) {
       // Rechecks on every iteration: another call only enters after this one
       // finishes (queue above), but this also guards against this very
@@ -534,7 +538,6 @@ anyFileInput.addEventListener("change", async () => {
     }
     try {
       const content = await file.text();
-      pendingImages = [];
       pendingFile = { name: file.name, content, type: file.type };
       renderPreviewThumbs();
       previewWrap.querySelector("#file-name-label")?.remove();

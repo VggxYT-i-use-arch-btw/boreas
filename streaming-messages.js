@@ -115,6 +115,21 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
       else if (a.type === "deep_research") renderDeepResearchCard(col, { title: a.title, step: 5, done: true });
       else if (a.type === "agentic_loop") renderAgenticLoopCard(col, { plan: a.plan, percent: a.percent, stage: a.stage, summary: a.summary, done: true, converged: a.converged });
       else if (a.type === "ask_user_prompt") renderAskUserPromptRecap(col, { questions: a.questions, answers: a.answers, timedOut: a.timedOut });
+      else if (a.type === "generated_image") {
+        // Reuses the same card the live stream builds - previously this
+        // branch didn't exist at all, so a generated image silently
+        // disappeared the moment the chat was reopened (only the text
+        // around it survived). markImageGenerationExpired/renderImageGenerationCard
+        // already existed for exactly this case, just never wired in here.
+        if (a.status === "expired") {
+          renderImageGenerationCard(col, { image_id: a.image_id, status: "generating", aspect_ratio: a.aspect_ratio });
+          markImageGenerationExpired(col, a.image_id);
+        } else if (a.status === "failed") {
+          renderImageGenerationCard(col, { image_id: a.image_id, status: "failed", aspect_ratio: a.aspect_ratio });
+        } else {
+          renderImageGenerationCard(col, { image_id: a.image_id, status: "ready", aspect_ratio: a.aspect_ratio, width: a.width, height: a.height });
+        }
+      }
     });
   }
 

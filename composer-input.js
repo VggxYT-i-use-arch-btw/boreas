@@ -177,10 +177,14 @@ function scrollToBottom(force) {
 
   // Streaming can call this function several times per network chunk. Keep
   // one write per frame so reading scrollHeight and updating scrollTop do not
-  // force repeated layout passes while the answer is being rendered.
+  // force repeated layout passes while the answer is being rendered - this
+  // throttle also matters for the smooth scroll below: calling scrollTo
+  // with behavior:"smooth" on every chunk would restart the animation each
+  // time and look jittery instead of smooth, so at most one scroll call
+  // per animation frame is allowed through.
   _scrollFrame = requestAnimationFrame(() => {
     _scrollFrame = 0;
-    if (autoScroll) messagesEl.scrollTop = messagesEl.scrollHeight;
+    if (autoScroll) messagesEl.scrollTo({ top: messagesEl.scrollHeight, behavior: "smooth" });
     updateScrollBtn();
   });
 }
@@ -622,7 +626,40 @@ msgInput.addEventListener("keydown", e => {
           btn.className = 'msg-action-btn share-btn';
           btn.title = 'Compartilhar';
           btn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>';
-          btn.addEventListener('click', function() {});
+          btn.addEventListener('click', function() {
+            // The share button can sit in a row with several bubbles (tool
+            // result cards, multiple text segments after a tool round) -
+            // joins every bubble's real text (falls back to visible text if
+            // _rawText wasn't set on that particular bubble) instead of
+            // grabbing only the first one and silently dropping the rest.
+            var col = actionsEl.closest('.bot-col');
+            var bubbles = col ? Array.from(col.querySelectorAll('.bubble.bot')) : [];
+            var text = bubbles.map(function(b) { return b._rawText ?? b.textContent ?? ''; })
+              .filter(Boolean).join('\n\n').trim();
+            if (!text) { if (typeof showToast === 'function') showToast('Nada para compartilhar ainda.'); return; }
+
+            var now = new Date();
+            var time = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+            var date = now.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' });
+            var formatted = 'Resposta gerada pelo Boreas às ' + time + ' de ' + date + ':\n\n' +
+              '"' + text + '"\n\n' +
+              'Nota: O Boreas é uma IA e pode cometer erros. Verifique as respostas.';
+
+            if (navigator.share) {
+              navigator.share({ text: formatted }).catch(function(err) {
+                // AbortError just means the user closed the native share
+                // sheet - not a failure worth falling back for.
+                if (err && err.name === 'AbortError') return;
+                if (typeof copyText === 'function') copyText(formatted, btn);
+                if (typeof showToast === 'function') showToast('Não foi possível compartilhar - copiado para a área de transferência.');
+              });
+            } else if (typeof copyText === 'function') {
+              // No Web Share API at all (most desktop browsers): copying is
+              // the closest equivalent to a dead button.
+              copyText(formatted, btn);
+              if (typeof showToast === 'function') showToast('Copiado para a área de transferência.');
+            }
+          });
           actionsEl.appendChild(btn);
         });
       }

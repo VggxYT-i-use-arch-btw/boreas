@@ -2,12 +2,28 @@
 // Loaded as a classic script in the exact order declared by index.html.
 
 let _usageData = null;
+let _imagesData = null;
 let _activePeriod = "last_hour";
 
 function fmtNum(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + "M";
   if (n >= 1_000)     return (n / 1_000).toFixed(1) + "k";
   return String(n);
+}
+
+function renderImagesCard() {
+  if (!_imagesData) return "";
+  const used = Math.max(0, Number(_imagesData.used_this_month ?? 0));
+  const limit = Math.max(1, Number(_imagesData.monthly_limit ?? 60));
+  const pct = Math.min(100, Math.round((used / limit) * 100));
+  const nearLimit = used >= limit;
+  return `
+    <div class="usage-visual-card usage-images-card">
+      <div class="usage-visual-head"><span>Imagens geradas este mês</span><strong>${used}/${limit}</strong></div>
+      <div class="usage-visual-bar" aria-label="${pct}% do limite mensal de imagens usado">
+        <span class="usage-visual-images${nearLimit ? " limit" : ""}" style="width:${pct}%"></span>
+      </div>
+    </div>`;
 }
 
 function renderUsage(period) {
@@ -32,6 +48,7 @@ function renderUsage(period) {
         <span><i class="usage-dot completion"></i>Saída ${fmtNum(completionTokens)}</span>
       </div>
     </div>
+    ${renderImagesCard()}
     <div class="usage-cards">
       <div class="usage-card">
         <div class="usage-card-label">TOTAL</div>
@@ -62,10 +79,12 @@ async function loadUsageStats() {
   const data = await BoreasSync.usage.get(); // retries + falls back to last cached usage internally
   if (data) {
     _usageData = data.stats ?? null;
+    _imagesData = data.images ?? null;
     renderUsage(_activePeriod);
     return;
   }
   _usageData = null;
+  _imagesData = null;
   el.innerHTML = '<div class="usage-loading">Não foi possível carregar o uso.</div>';
 }
 
