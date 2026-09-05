@@ -1,7 +1,7 @@
 // Boreas frontend module: message rendering, actions, context menu, editing, and retry.
 // Loaded as a classic script in the exact order declared by index.html.
 
-function appendMessage(role, content, imageB64, msgIndex, attachments, thinking, steps, activity) {
+function appendMessage(role, content, imageB64, msgIndex, attachments, thinking, steps, activity, fileAttachment) {
   const emptyEl = document.getElementById("empty");
   if (emptyEl) emptyEl.remove();
 
@@ -154,11 +154,25 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
     bubble.appendChild(grid);
   }
 
+  if (role === "user" && fileAttachment?.name) {
+    // #15: card idêntico ao preview de antes de enviar, só sem o "X" de
+    // remover - comportamento esperado confirmado no relatório do bug.
+    const card = createAttachCard({ name: fileAttachment.name, mime: "", removable: false });
+    const body = document.createElement("div"); body.className = "file-chip-body";
+    const fc = String(fileAttachment.content ?? "");
+    body.textContent = fc.slice(0, 4000) + (fc.length > 4000 ? "\n…(truncado)" : "");
+    card.addEventListener("click", () => body.classList.toggle("open"));
+    bubble.appendChild(card); bubble.appendChild(body);
+  }
+
   if (role === "bot" && content) renderMarkdown(bubble, content);
   else if (content) {
 
+    // Fallback só para histórico salvo no formato antigo, onde o conteúdo
+    // do arquivo ainda vem embutido no texto como "[Arquivo: nome]\n```...```".
+    // Mensagens novas usam fileAttachment (acima) e nunca caem aqui.
     const FILE_RE = /^\[Arquivo: (.+?)\]\n```[^\n]*\n([\s\S]*?)\n```([\s\S]*)$/;
-    const fileMatch = content.match(FILE_RE);
+    const fileMatch = !fileAttachment && content.match(FILE_RE);
     if (fileMatch && role === "user") {
       const [, fname, fcontent, remainder] = fileMatch;
       const chip = document.createElement("div"); chip.className = "file-chip";

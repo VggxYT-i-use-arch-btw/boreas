@@ -279,12 +279,13 @@ async function resumePending(pluginOverride) {
     finalizeThinkingSegment(activity);
     removeTyping();
     if (streamFailed) {
+      stopElapsedTicker();
       clearPendingGen();
       currentGenId = null;
       return;
     }
     if (!responseBubble && !reply && !reasoning) appendMessage("bot", "Sem resposta.");
-    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
+    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) { stopElapsedTicker(); return; }
     messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
     saveCurrentMessages();
     updateRegenerateAvailability();
@@ -292,8 +293,9 @@ async function resumePending(pluginOverride) {
     stopElapsedTicker();
 
   } catch (e) {
+    stopElapsedTicker();
     if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
-    clearTimeout(thinkingTimer); clearTimeout(_resumeTimeout); stopNoResponseWatchdog(); stopElapsedTicker(); removeTyping();
+    clearTimeout(thinkingTimer); clearTimeout(_resumeTimeout); stopNoResponseWatchdog(); removeTyping();
     if (e?.name === "AbortError" && userStoppedGeneration) {
       // Stop requested by the user or by a failed prompt-response request.
     } else if (noGenIdTimedOut) {

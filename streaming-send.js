@@ -25,15 +25,22 @@ async function send() {
   const fileSnapshot    = pendingFile;
   let userContent;
 
+  // #15: o conteúdo do arquivo não entra mais no texto da mensagem (isso
+  // fazia o arquivo inteiro viajar de novo a cada request, pra sempre, no
+  // histórico). Vai como content part próprio (mesmo padrão de image_url);
+  // o backend materializa isso como arquivo real no workshop e o texto
+  // visível da mensagem some com o nome + conteúdo do arquivo.
   if (imagesSnapshot.length) {
     userContent = [
       ...imagesSnapshot.map(src => ({ type: "image_url", image_url: { url: src } })),
-      ...(fileSnapshot ? [{ type: "text", text: `[Arquivo: ${fileSnapshot.name}]\n\`\`\`\n${fileSnapshot.content}\n\`\`\`` }] : []),
+      ...(fileSnapshot ? [{ type: "text_file", text_file: { name: fileSnapshot.name, content: fileSnapshot.content } }] : []),
       ...(text ? [{ type: "text", text }] : [])
     ];
   } else if (fileSnapshot) {
-    const fileBlock = `[Arquivo: ${fileSnapshot.name}]\n\`\`\`\n${fileSnapshot.content}\n\`\`\``;
-    userContent = text ? `${fileBlock}\n\n${text}` : fileBlock;
+    userContent = [
+      { type: "text_file", text_file: { name: fileSnapshot.name, content: fileSnapshot.content } },
+      ...(text ? [{ type: "text", text }] : [])
+    ];
   } else {
     userContent = text;
   }
@@ -60,13 +67,8 @@ async function send() {
   // Rendered optimistically, before the network round-trip below - the
   // user's own message should never wait on a server response to appear
   // in the chat (was the ~200ms+ visible delay, worse on slow connections).
-  const fileBlockForDisplay = fileSnapshot
-    ? `[Arquivo: ${fileSnapshot.name}]\n\`\`\`\n${fileSnapshot.content}\n\`\`\``
-    : null;
-  const displayContent = imagesSnapshot.length
-    ? (fileBlockForDisplay ? `${fileBlockForDisplay}${text ? `\n\n${text}` : ""}` : (text || ""))
-    : (fileSnapshot ? userContent : (typeof userContent === "string" ? userContent : text));
-  appendMessage("user", displayContent, imagesSnapshot, userMsgIndex);
+  const displayContent = text || "";
+  appendMessage("user", displayContent, imagesSnapshot, userMsgIndex, null, null, null, null, fileSnapshot);
 
   pendingImages = []; pendingFile = null;
   renderPreviewThumbs();
@@ -391,7 +393,7 @@ async function send() {
       appendMessage("bot", "Sem resposta.");
     }
 
-    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
+    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) { stopElapsedTicker(); return; }
     // genId on the message lets the reconnection flow (syncGenerationOnce)
     // reliably detect whether this generation was already appended,
     // instead of comparing text.
@@ -403,8 +405,9 @@ async function send() {
     stopElapsedTicker();
 
   } catch (e) {
+    stopElapsedTicker();
     if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
-    clearTimeout(thinkingTimer); clearTimeout(_fetchTimeout); stopNoResponseWatchdog(); stopElapsedTicker(); removeTyping();
+    clearTimeout(thinkingTimer); clearTimeout(_fetchTimeout); stopNoResponseWatchdog(); removeTyping();
 
     if (noGenIdTimedOut) {
 

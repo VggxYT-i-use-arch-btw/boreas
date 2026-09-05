@@ -337,6 +337,15 @@ globalThis.BoreasClearLegacyImageStore = () => idbDeleteWhere(key => {
   return !/^[a-f0-9]{32}:[A-Za-z0-9_-]{1,80}:\d+:\d+$/i.test(value);
 });
 
+// #14: apesar do nome, esta função nunca redimensionava nem reencodava nada
+// — só lia o arquivo original via FileReader e devolvia os bytes intactos.
+// Em produção (GPU limitada, Termux) isso significa decodificar/renderizar
+// fotos de câmera em resolução nativa (ex: 4000x3000) só para caber numa
+// bolha de chat de ~260px. GIFs ficam de fora do resize (perderiam a
+// animação num canvas estático) e continuam indo como antes.
+const MAX_IMAGE_DIM = 1600; // teto de lado maior; suficiente para o modelo ler texto/detalhe em imagem
+const IMAGE_JPEG_QUALITY = 0.85;
+
 async function compressImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -353,12 +362,44 @@ async function compressImage(file) {
         reject(new Error("Imagem muito grande para processar com segurança."));
         return;
       }
-      // No resize/re-encode - the original file bytes go to the model
-      // as-is, at full resolution and original quality.
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = () => reject(new Error(`Não foi possível ler "${file.name}" - formato não suportado (tente JPG/PNG) ou arquivo corrompido.`));
-      reader.readAsDataURL(file);
+
+      const readOriginal = () => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error(`Não foi possível ler "${file.name}" - formato não suportado (tente JPG/PNG) ou arquivo corrompido.`));
+        reader.readAsDataURL(file);
+      };
+
+      // GIF preserva o arquivo original (canvas perderia a animação).
+      // Se já está dentro do teto, não vale reencodar - reencode com
+      // qualidade 0.85 pode aumentar o tamanho de PNGs já pequenos/simples.
+      const isGif = /^image\/gif$/i.test(file.type || "");
+      const withinBounds = img.width <= MAX_IMAGE_DIM && img.height <= MAX_IMAGE_DIM;
+      if (isGif || withinBounds) {
+        readOriginal();
+        return;
+      }
+
+      try {
+        const scale = MAX_IMAGE_DIM / Math.max(img.width, img.height);
+        const targetW = Math.max(1, Math.round(img.width * scale));
+        const targetH = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = targetW;
+        canvas.height = targetH;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) { readOriginal(); return; }
+        ctx.drawImage(img, 0, 0, targetW, targetH);
+        const dataUrl = canvas.toDataURL("image/jpeg", IMAGE_JPEG_QUALITY);
+        // Canvas tainted (CORS) ou toDataURL falhou silenciosamente -> cai
+        // pro arquivo original em vez de mandar um data URL vazio/quebrado.
+        if (!dataUrl || dataUrl === "data:,") { readOriginal(); return; }
+        resolve(dataUrl);
+      } catch (e) {
+        // SecurityError (canvas tainted) ou qualquer outro erro de canvas:
+        // não trava o envio, só perde a otimização desta imagem específica.
+        readOriginal();
+      }
     };
     img.onerror = () => {
       cleanup();
@@ -423,7 +464,13 @@ async function addPendingImagesLocked(files) {
       const b64 = await compressImage(file);
       pendingImages.push(b64);
     }
-    previewWrap.querySelector("#file-name-label")?.remove();
+    // #16: removia o card de arquivo aqui incondicionalmente, mesmo que
+    // pendingFile continuasse setado - anexar uma imagem depois de já ter
+    // anexado um arquivo (ou vice-versa) fazia o card do arquivo sumir do
+    // preview visualmente, enquanto pendingFile seguia sendo enviado por
+    // baixo dos panos. Essa remoção só faz sentido quando NÃO há mais
+    // arquivo pendente para mostrar.
+    if (!pendingFile) previewWrap.querySelector("#file-name-label")?.remove();
     renderPreviewThumbs();
   } catch (err) {
     console.error("[addPendingImages]", err);
@@ -440,6 +487,10 @@ function openAttachSheet() {
   attachSheet.classList.add("open");
   attachSheetBackdrop.classList.add("show");
   syncWebSearchToggle();
+  // #17: re-tenta a disponibilidade do plugin "Gerar imagem" toda vez que o
+  // menu abre, em vez de confiar só na tentativa única do load do script -
+  // ver comentário em syncImageGenerationPluginAvailability (composer-input.js).
+  globalThis.syncImageGenerationPluginAvailability?.();
 }
 function closeAttachSheet() {
   attachSheet.classList.remove("open");
@@ -450,11 +501,6 @@ document.getElementById("asheet-close").addEventListener("click", closeAttachShe
 attachSheetBackdrop.addEventListener("click", closeAttachSheet);
 
 function tryOpenImagePicker(input) {
-  if (NO_VISION_TIERS.includes(currentTier)) {
-    closeAttachSheet();
-    alert(`Boreas ${NO_VISION_LABEL[currentTier] ?? currentTier} não suporta imagens. Troque de modelo pra enviar imagens.`);
-    return;
-  }
   closeAttachSheet();
   input.click();
 }
@@ -508,11 +554,6 @@ asheetSearchToggle.addEventListener("click", async e => {
 anyFileInput.addEventListener("change", async () => {
   const file = anyFileInput.files[0]; if (!file) return; anyFileInput.value = "";
   if (file.type.startsWith("image/")) {
-
-    if (NO_VISION_TIERS.includes(currentTier)) {
-      alert(`Boreas ${NO_VISION_LABEL[currentTier] ?? currentTier} não suporta imagens. Troque de modelo pra enviar imagens.`);
-      return;
-    }
     await addPendingImages([file]);
   } else {
     if (file.size > 5 * 1024 * 1024) { alert("Arquivo muito grande. Limite: 5 MB."); return; }

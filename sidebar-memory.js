@@ -134,7 +134,19 @@ function renderPrivacyView(body) {
 
 async function renderFontView(body) {
   body.innerHTML = `<div id="font-list-wrap"><div class="usage-loading">Carregando...</div></div>`;
-  let current = { font: localStorage.getItem("boreas_font") || "Inter", availableFonts: [] };
+  // NOTE (bug #18, revisado 2026-09-02): "Geist" é a fonte padrão real do
+  // app desde o redesign anti-slop (ver --user-font em styles.css), mas
+  // não está na lista AVAILABLE_FONTS do back-end (config/runtime.js) -
+  // essa lista é só de fontes alternativas de personalização, não inclui
+  // a fonte padrão. O bug original era o fallback aqui apontar para
+  // "Inter", que É um item real da lista e por isso aparecia marcado
+  // como "selected" mesmo quando o usuário nunca escolheu Inter
+  // explicitamente. Trocando para "Geist" o problema se resolve por
+  // consequência: como Geist não está na lista, nenhum item fica marcado
+  // quando não há preferência customizada salva - que é o comportamento
+  // correto (nenhuma das alternativas foi escolhida, então nenhuma deve
+  // aparecer com check).
+  let current = { font: localStorage.getItem("boreas_font") || "Geist", availableFonts: [] };
   if (BoreasSync.isAuthed()) {
     try {
       const r = await fetch(BACKEND_URL + "/appearance", { headers: BoreasSessionHeaders(), credentials: "include" });
@@ -165,7 +177,7 @@ async function renderFontView(body) {
   wrap.querySelectorAll(".font-list-item").forEach(item => {
     item.addEventListener("click", async () => {
       const font = item.dataset.font;
-      const previousFont = localStorage.getItem("boreas_font") || "Inter";
+      const previousFont = localStorage.getItem("boreas_font") || "Geist";
       applyFont(font);
       wrap.querySelectorAll(".font-list-item").forEach(i => i.classList.toggle("selected", i === item));
       if (!BoreasSync.isAuthed()) return;

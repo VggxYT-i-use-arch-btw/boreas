@@ -13,16 +13,19 @@ const TIER_SPEEDS = { altra1: "cheapest", solstice1: "cheapest", sunset2: "cheap
 let ACCOUNT_SCOPE = "";
 let LAST_TIER_KEY = "";
 
-// Altra, Nebula, and Starlight (coding, text-only) keep vision disabled in the UI.
-const NO_VISION_TIERS = ["altra1", "nebula1", "starlight2"];
-const NO_VISION_LABEL = { altra1: "Altra I", nebula1: "Nebula I", starlight2: "Starlight II" };
+// Altra and Starlight (coding, text-only) keep vision disabled in the UI.
+// Nebula switched to DeepSeek-V4-Flash-Vision-Exp (native vision), so it's
+// no longer in this list. Keep in sync with NO_VISION_TIERS in
+// back-end/sub_boreas/config/runtime.js.
+const NO_VISION_TIERS = ["altra1", "starlight2"];
+const NO_VISION_LABEL = { altra1: "Altra I", starlight2: "Starlight II" };
 
 // Effort levels each tier actually accepts, ordered weakest -> strongest,
 // plus the level used when nothing valid is stored yet. Mirrors
 // TIER_EFFORTS in back-end/sub_boreas/config/runtime.js - keep both in sync.
 const TIER_EFFORTS = {
-  altra1:     { levels: ["low", "high", "max"],             default: "max" },
-  solstice1:  { levels: ["low", "high", "max"],             default: "max" },
+  altra1:     { levels: ["low", "high", "max"],             default: "high" },
+  solstice1:  { levels: ["low", "high", "max"],             default: "high" },
   sunset2:    { levels: ["low", "medium", "xhigh"],         default: "xhigh" },
   horizon2:   { levels: ["low", "medium", "high", "xhigh"], default: "high" },
   nebula1:    { levels: ["low", "high", "max"],             default: "high" },
@@ -437,7 +440,7 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
     for (let i = 0; i < messages.length; i++) {
       const m = messages[i];
       if (m.role === "user") {
-        let text = "", imgs = [];
+        let text = "", imgs = [], fileAttachment = null;
         if (typeof m.content === "string") {
           // The backend persists user images as "[imagem:ID.ext]" inside a
           // string (attachment-service.js/persistUserImage), later served
@@ -448,9 +451,15 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
         } else if (Array.isArray(m.content)) {
           const tp = m.content.find(p => p.type === "text");
           imgs = m.content.filter(p => p.type === "image_url").map(p => p.image_url?.url).filter(Boolean);
+          // #15: histórico novo guarda o arquivo como part próprio, não mais
+          // embutido no texto. Conversas antigas (formato "[Arquivo: ...]"
+          // dentro do texto) continuam sendo pegas pelo FILE_RE legado em
+          // appendMessage - não migradas, só não geradas mais assim.
+          const fp = m.content.find(p => p.type === "text_file");
+          fileAttachment = fp?.text_file ? { name: fp.text_file.name, content: fp.text_file.content } : null;
           text = tp?.text ?? "";
         }
-        appendMessage("user", text, imgs, i);
+        appendMessage("user", text, imgs, i, null, null, null, null, fileAttachment);
       } else if (m.role === "assistant") {
 
         const raw = typeof m.content === "string" ? m.content : "";

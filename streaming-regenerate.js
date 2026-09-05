@@ -214,13 +214,14 @@ async function regenerate(botRow, botBubble, actionsEl) {
     finalizeThinkingSegment(activity);
 
     if (streamFailed) {
+      stopNoResponseWatchdog(); stopElapsedTicker();
       clearPendingGen();
       currentGenId = null;
       if (actionsEl) actionsEl.style.opacity = "";
       return;
     }
 
-    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
+    if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) { stopNoResponseWatchdog(); stopElapsedTicker(); return; }
     if (reply || msgAttachments.length) {
       messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), ...(currentGenId ? { genId: currentGenId } : {}) });
       saveCurrentMessages();
@@ -242,9 +243,9 @@ async function regenerate(botRow, botBubble, actionsEl) {
     clearPendingGen(); currentGenId = null;
     stopNoResponseWatchdog(); stopElapsedTicker();
   } catch (e) {
+    stopNoResponseWatchdog(); stopElapsedTicker();
     if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) return;
     clearTimeout(thinkingTimer);
-    stopNoResponseWatchdog(); stopElapsedTicker();
 
     if (noGenIdTimedOut) {
 

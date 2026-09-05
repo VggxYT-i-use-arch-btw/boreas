@@ -454,7 +454,7 @@ function toolActivityLabel(tool, value) {
 }
 const TOOL_ACTIVITY_ICON_PATHS = {
   WEB_SEARCH: `<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path>`,
-  WEB_FETCH: `<circle cx="12" cy="12" r="9"></circle><path d="M3 12h18"></path><path d="M12 3a14 14 0 0 1 0 18"></path>`,
+  WEB_FETCH: `<circle cx="12" cy="12" r="9"></circle><ellipse cx="12" cy="12" rx="4" ry="9"></ellipse><path d="M3 12h18"></path><path d="M4.5 7.5h15"></path><path d="M4.5 16.5h15"></path>`,
   BASH: `<polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line>`,
   DELETE: `<polyline points="3 6 5 6 21 6"></polyline><path d="M19 6l-1 14H6L5 6"></path><path d="M10 11v5M14 11v5"></path><path d="M9 6V4h6v2"></path>`,
   STR_REPLACE: `<path d="m4 17 6-6"></path><path d="m14 7 6-4-4 6"></path><path d="M3 21h6"></path>`,
@@ -495,10 +495,16 @@ function updateToolActivityCard(card, tool, value, output) {
   // The rich widget (currency, chart, images...) appears directly in the
   // conversation via showInlineToolResult; here, inside the collapsed card,
   // only the raw output is shown, for anyone who wants to check what the
-  // tool actually returned.
-  const out = document.createElement("pre"); out.className = "tool-activity-output";
-  out.textContent = String(output ?? "").slice(0, 5000); body.appendChild(out);
-  card.classList.toggle("has-details", !!body.childNodes.length);
+  // tool actually returned. A blank/whitespace-only output has nothing to
+  // show, so has-details must stay false - otherwise the expand chevron
+  // is clickable but reveals an empty box.
+  const outputText = String(output ?? "").slice(0, 5000);
+  const hasRealOutput = outputText.trim().length > 0;
+  if (hasRealOutput) {
+    const out = document.createElement("pre"); out.className = "tool-activity-output";
+    out.textContent = outputText; body.appendChild(out);
+  }
+  card.classList.toggle("has-details", hasRealOutput);
 }
 const MAX_TOOL_ACTIVITY_CARDS = 256;
 function pruneToolActivityCards(host) {

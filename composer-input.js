@@ -104,20 +104,12 @@ function updateImageAttach() {
   const camCard = document.getElementById("asheet-camera");
   const photoCard = document.getElementById("asheet-photos");
   if (!camCard || !photoCard) return;
-  if (NO_VISION_TIERS.includes(currentTier)) {
-    camCard.classList.add("disabled");
-    photoCard.classList.add("disabled");
-    camCard.title = photoCard.title = `Boreas ${NO_VISION_LABEL[currentTier]} não suporta imagens`;
-
-    if (pendingImages.length) {
-      pendingImages = [];
-      renderPreviewThumbs();
-    }
-  } else {
-    camCard.classList.remove("disabled");
-    photoCard.classList.remove("disabled");
-    camCard.title = photoCard.title = "";
-  }
+  // NO_VISION_TIERS não bloqueia mais o anexo: o back-end sempre aplica o
+  // fallback de visão (descrição via Gemma) pra esses tiers, então o anexo
+  // funciona igual - só não é vision nativa.
+  camCard.classList.remove("disabled");
+  photoCard.classList.remove("disabled");
+  camCard.title = photoCard.title = "";
 }
 
 document.getElementById("lock-upgrade-btn")?.addEventListener("click", () => {
@@ -169,6 +161,42 @@ messagesEl.addEventListener("scroll", () => {
   updateScrollBtn();
 });
 scrollBottomBtn.addEventListener("click", () => scrollToBottom(true));
+
+// O botão de "ir para o final" é position:absolute com um bottom fixo em
+// CSS (var(--composer-clearance), com fallback pra 84px). .input-row e
+// #image-preview-wrap ficam no fluxo normal do documento (não são
+// fixed/absolute), então a altura real do composer varia - textarea
+// multi-linha, preview de anexos - sem nenhum aviso pro botão. Sem isso,
+// o composer crescia por cima da posição fixa do botão, que passava a
+// flutuar sobre as mensagens em vez de ficar colado acima da barra de
+// escrever.
+(function observeComposerHeight() {
+  const inputRow = document.querySelector(".input-row");
+  const previewWrap = document.getElementById("image-preview-wrap");
+  if (!inputRow || typeof ResizeObserver === "undefined") return;
+
+  const BASE_CLEARANCE = 84; // mesmo valor que já era o fallback fixo em CSS
+  const GAP_ABOVE_INPUT = 8; // espaço extra entre o botão e o topo do composer
+
+  function updateComposerClearance() {
+    const inputRowHeight = inputRow.getBoundingClientRect().height || 0;
+    const inputRowMarginBottom = parseFloat(getComputedStyle(inputRow).marginBottom) || 0;
+    const previewVisible = previewWrap && previewWrap.classList.contains("show");
+    const previewHeight = previewVisible ? previewWrap.getBoundingClientRect().height : 0;
+    const previewMarginBottom = previewVisible ? (parseFloat(getComputedStyle(previewWrap).marginBottom) || 0) : 0;
+    // input-row e o preview não incluem sua própria margem inferior em
+    // getBoundingClientRect (a do input-row usa max(20px,
+    // env(safe-area-inset-bottom)), variável por device) - soma-se
+    // manualmente, junto com uma folga fixa acima de tudo.
+    const clearance = Math.max(BASE_CLEARANCE, inputRowHeight + inputRowMarginBottom + previewHeight + previewMarginBottom + GAP_ABOVE_INPUT);
+    document.documentElement.style.setProperty("--composer-clearance", `${Math.round(clearance)}px`);
+  }
+
+  const ro = new ResizeObserver(updateComposerClearance);
+  ro.observe(inputRow);
+  if (previewWrap) ro.observe(previewWrap);
+  updateComposerClearance();
+})();
 
 function scrollToBottom(force) {
   if (force) autoScroll = true;
@@ -272,10 +300,15 @@ function syncInputOverflow() {
 
 msgInput.addEventListener("input", () => {
   if (!loading) sendBtn.disabled = !msgInput.value.trim() && !pendingImages.length && !pendingFile;
+  // Decide expanded/collapsed shape BEFORE sizing height off scrollHeight.
+  // .expanded changes the row's padding/flex layout, which changes the
+  // textarea's own box - measuring height first (against the old shape's
+  // geometry) is what produced the transient "oval with squashed text"
+  // frame when a keystroke crossed the 1-line -> 2-line threshold.
+  updateInputRadius();
   msgInput.style.height = "auto";
   msgInput.style.height = Math.min(msgInput.scrollHeight, inputMaxHeight()) + "px";
   syncInputOverflow();
-  updateInputRadius();
 });
 
 window.addEventListener("resize", () => {
@@ -330,18 +363,27 @@ const PLUGINS = [
 // configured (see runtime.js's imageGenerationTokenConfigured gate) - the
 // "image_generation" plugin entry starts disabled and only flips on after
 // this confirms the feature is actually live, so the quick-action menu
-// never offers something that would just fail. Best-effort: on any error
-// (offline, endpoint unreachable) it silently leaves the entry disabled
-// rather than surfacing an error for a menu item nobody tapped yet.
+// never offers something that would just fail.
+//
+// #17: essa call rodava só uma vez, no load do script - se falhasse por
+// qualquer motivo passageiro (auth ainda não pronta, rede lenta), o catch
+// vazio engolia o erro sem log e o plugin ficava travado em "Em breve" pro
+// resto da sessão inteira, mesmo com a feature funcionando no servidor
+// (bug #2/#3 confirmam que funciona). Agora loga a falha e é re-chamada
+// toda vez que o usuário abre o menu de anexar/plugins, então uma falha
+// pontual não gruda a UI num estado errado até o próximo reload.
 async function syncImageGenerationPluginAvailability() {
   try {
     const response = await fetch(`${BACKEND_URL}/status`);
-    if (!response.ok) return;
+    if (!response.ok) { console.warn("[image_generation availability] /status HTTP", response.status); return; }
     const data = await response.json();
     const entry = PLUGINS.find(p => p.id === "image_generation");
     if (entry) entry.enabled = Boolean(data?.imageGenerationAvailable);
     if (mentionPopup?.classList.contains("open")) renderMentionPopup();
-  } catch {}
+    renderAsheetPluginsList();
+  } catch (err) {
+    console.warn("[image_generation availability] sync falhou:", err?.message || err);
+  }
 }
 syncImageGenerationPluginAvailability();
 
@@ -469,41 +511,43 @@ function clearActivePlugin() {
 const asheetPluginsRow  = document.getElementById("asheet-plugins-row");
 const asheetPluginsList = document.getElementById("asheet-plugins-list");
 
-asheetPluginsList.replaceChildren(...PLUGINS.map(p => {
-  const option = document.createElement("div");
-  option.className = `asheet-plugin-option${p.enabled ? "" : " disabled"}`;
-  option.dataset.id = p.id;
-  const icon = document.createElement("div");
-  icon.className = "asheet-plugin-icon";
-  icon.appendChild(createPluginIcon(p.icon));
-  const info = document.createElement("div");
-  info.className = "asheet-plugin-info";
-  const name = document.createElement("div");
-  name.className = "asheet-plugin-name";
-  name.textContent = p.label;
-  const desc = document.createElement("div");
-  desc.className = "asheet-plugin-desc";
-  desc.textContent = p.desc;
-  info.append(name, desc);
-  option.append(icon, info);
-  if (!p.enabled) {
-    const soon = document.createElement("span");
-    soon.className = "asheet-plugin-soon";
-    soon.textContent = "Em breve";
-    option.appendChild(soon);
-  }
-  return option;
-}));
-
-asheetPluginsList.querySelectorAll(".asheet-plugin-option").forEach(el => {
-  el.addEventListener("click", () => {
-    const plugin = PLUGINS.find(p => p.id === el.dataset.id);
-    if (!plugin || !plugin.enabled) return;
-    applyPluginMention(plugin);
-    closeAttachSheet(); // minimiza a aba de anexar, como no @
-    msgInput.focus();
+function renderAsheetPluginsList() {
+  asheetPluginsList.replaceChildren(...PLUGINS.map(p => {
+    const option = document.createElement("div");
+    option.className = `asheet-plugin-option${p.enabled ? "" : " disabled"}`;
+    option.dataset.id = p.id;
+    const icon = document.createElement("div");
+    icon.className = "asheet-plugin-icon";
+    icon.appendChild(createPluginIcon(p.icon));
+    const info = document.createElement("div");
+    info.className = "asheet-plugin-info";
+    const name = document.createElement("div");
+    name.className = "asheet-plugin-name";
+    name.textContent = p.label;
+    const desc = document.createElement("div");
+    desc.className = "asheet-plugin-desc";
+    desc.textContent = p.desc;
+    info.append(name, desc);
+    option.append(icon, info);
+    if (!p.enabled) {
+      const soon = document.createElement("span");
+      soon.className = "asheet-plugin-soon";
+      soon.textContent = "Em breve";
+      option.appendChild(soon);
+    }
+    return option;
+  }));
+  asheetPluginsList.querySelectorAll(".asheet-plugin-option").forEach(el => {
+    el.addEventListener("click", () => {
+      const plugin = PLUGINS.find(p => p.id === el.dataset.id);
+      if (!plugin || !plugin.enabled) return;
+      applyPluginMention(plugin);
+      closeAttachSheet(); // minimiza a aba de anexar, como no @
+      msgInput.focus();
+    });
   });
-});
+}
+renderAsheetPluginsList();
 
 asheetPluginsRow.addEventListener("click", () => {
   asheetPluginsRow.classList.toggle("open");

@@ -111,6 +111,7 @@ async function syncGenerationOnce(genId) {
   let syncMissing = false;
   let syncFailed = false;
   let syncFailureMessage = "";
+  const stalePromptIds = new Set();
   const controller = new AbortController();
   syncAbortController = controller;
   currentAbortController = controller;
@@ -162,6 +163,7 @@ async function syncGenerationOnce(genId) {
           syncFailureMessage = String(chunk.message || "A resposta não pôde ser reconstruída integralmente.");
           continue;
         }
+        if (chunk.type === "ask_user_prompt_stale" && chunk.promptId) { stalePromptIds.add(String(chunk.promptId)); continue; }
         if (chunk.type === "gen_id" || chunk.type === "heartbeat" || chunk.type === "token_exhausted") continue;
         if (chunk.type === "file" && chunk.name) { ensureRow(); masterCol.appendChild(createFileCard(chunk.name, chunk.data, chunk.mime)); msgAttachments.push({ type: "file", name: chunk.name, data: chunk.data, mime: chunk.mime }); scrollToBottom(); continue; }
         if (chunk.type === "deep_research") { ensureRow(); renderDeepResearchCard(masterCol, chunk); if (chunk.done) msgAttachments = [...msgAttachments.filter(a => a.type !== "deep_research"), { ...chunk }]; continue; }
@@ -174,6 +176,18 @@ async function syncGenerationOnce(genId) {
               { type: "generated_image", image_id: chunk.image_id, status: chunk.status, aspect_ratio: chunk.aspect_ratio, width: chunk.width, height: chunk.height, is_edit: chunk.is_edit },
             ];
           }
+          continue;
+        }
+        // Um ask_user_prompt já sinalizado como stale (respondido/expirado
+        // em outra reconexão ou já resolvido no servidor) vira só um recap
+        // somente-leitura - sem isso, cada reconexão (focus/pageshow/online
+        // disparam uma) reabria um novo card interativo aguardando resposta
+        // para a MESMA pergunta, empilhando cards órfãos a cada vez que a
+        // página saía e voltava do foco.
+        if (chunk.type === "ask_user_prompt" && stalePromptIds.has(String(chunk.promptId))) {
+          ensureRow();
+          renderAskUserPromptRecap(masterCol, { questions: chunk.questions, answers: null, timedOut: true });
+          msgAttachments.push({ type: "ask_user_prompt", promptId: chunk.promptId, questions: chunk.questions, answers: null, timedOut: true });
           continue;
         }
         if (chunk.type === "ask_user_prompt") { ensureRow(); const _aupAns = await renderAskUserPromptCard(masterCol, chunk.promptId, chunk.questions); msgAttachments.push({ type: "ask_user_prompt", promptId: chunk.promptId, questions: chunk.questions, answers: _aupAns ?? null, timedOut: !_aupAns }); continue; }
@@ -212,6 +226,21 @@ async function syncGenerationOnce(genId) {
 
     if (responseBubble) renderMarkdown(responseBubble, segmentReply);
     finalizeThinkingSegment(activity);
+    // O replay de sync nunca monta os botões de ação (copiar/tentar
+    // novamente) porque, ao contrário do streaming ao vivo, não passa pelo
+    // trecho que os cria junto com a bolha. Sem isso a mensagem sincronizada
+    // fica sem copiar/retry até a página ser recarregada do zero.
+    if (masterCol && !syncFailed && !syncMissing && (responseBubble || msgAttachments.length) && !masterCol.querySelector(".msg-actions")) {
+      const actions = document.createElement("div"); actions.className = "msg-actions";
+      const copyBtn = document.createElement("button"); copyBtn.className = "msg-action-btn";
+      copyBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg> Copiar`;
+      copyBtn.addEventListener("click", () => copyText(responseBubble?._rawText ?? reply ?? "", copyBtn));
+      const regenBtn = document.createElement("button"); regenBtn.className = "msg-action-btn msg-regenerate-btn";
+      regenBtn.innerHTML = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.27"/></svg> Tentar novamente`;
+      regenBtn.addEventListener("click", () => regenerate(masterRow, responseBubble, actions));
+      actions.appendChild(copyBtn); actions.appendChild(regenBtn);
+      masterCol.appendChild(actions);
+    }
     if (syncFailed) {
       masterRow?.remove();
       clearPendingGen();
