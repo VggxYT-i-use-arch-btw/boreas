@@ -1,3 +1,3 @@
 // Cloudflared
 // Tunnel
-globalThis.BOREAS_BACKEND_URL = "https://autumn-transformation-reads-poor.trycloudflare.com";
+globalThis.BOREAS_BACKEND_URL = "https://scored-outsourcing-vacancies-fixtures.trycloudflare.com";
