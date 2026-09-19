@@ -223,8 +223,10 @@ async function regenerate(botRow, botBubble, actionsEl) {
 
     if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) { stopNoResponseWatchdog(); stopElapsedTicker(); return; }
     if (reply || msgAttachments.length) {
-      messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), ...(currentGenId ? { genId: currentGenId } : {}) });
+      const finalAssistantMsg = { role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), ...(currentGenId ? { genId: currentGenId } : {}) };
+      messages.push(finalAssistantMsg);
       saveCurrentMessages();
+      refreshPersistedThinkingSummary({ chatId: streamChatId, genId: currentGenId, activity, assistantMessage: finalAssistantMsg });
       updateRegenerateAvailability();
     }
     if (responseBubble && !col.querySelector(".msg-actions")) {

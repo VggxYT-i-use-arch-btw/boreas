@@ -464,7 +464,7 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
 
         const raw = typeof m.content === "string" ? m.content : "";
         const display = raw.replace(/^\[Ferramentas usadas nesta resposta:[\s\S]*?\]\n\n/, "");
-        appendMessage("bot", display, null, i, m.attachments, m.thinking, m.steps, m.activity);
+        appendMessage("bot", display, null, i, m.attachments, m.thinking, m.steps, m.activity, null, m.thinkingSummary);
       }
     }
     if (typeof updateRegenerateAvailability === "function") updateRegenerateAvailability();

@@ -20,7 +20,7 @@
   --shadow-lg: 0 24px 80px rgba(0, 4, 6, .5);
   --radius-xl: 26px;
   --radius-lg: 20px;
-  --user-font: 'Geist', 'Manrope', sans-serif;
+  --user-font: 'Faculty Glyphic', sans-serif;
   --mono-font: 'Geist Mono', 'SF Mono', monospace;
 }
 
@@ -635,4 +635,68 @@ button:active { transform: scale(.97); }
 @keyframes subagentsSpin { to { transform: rotate(360deg); } }
 @media (max-width: 600px) {
   .subagents-widget-list { margin-left: 4px; }
+}
+
+/* Unified process trace: the accordion is an in-flow sibling of the
+   response, so expanding it pushes the conversation down instead of
+   covering it. The blue activity dot is intentionally separate from the
+   Boreas violet accent. */
+.thinking-trace-toggle {
+  display: flex; align-items: center; gap: 9px; width: min(100%, 720px);
+  min-height: 34px; margin: 3px 0 1px; padding: 5px 3px; border: 0;
+  border-radius: 8px; background: transparent; color: var(--text-faint);
+  font: 600 12px/1.2 var(--user-font); text-align: left; cursor: pointer;
+}
+.thinking-trace-toggle:hover, .thinking-trace-toggle.is-expanded { color: var(--text-dim); background: rgba(255,255,255,.025); }
+.thinking-trace-current-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: #4ca7ff; }
+.thinking-trace-current-dot.is-running { animation: traceActivityPulse 1.25s ease-in-out infinite; }
+.thinking-trace-preview { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thinking-trace-preview.is-shimmer {
+  color: transparent; background: linear-gradient(100deg, var(--text-faint) 28%, rgba(255,255,255,.9) 45%, var(--text-faint) 62%);
+  background-size: 220% 100%; background-clip: text; -webkit-background-clip: text;
+  animation: traceTextShimmer 1.8s ease-in-out infinite;
+}
+.thinking-trace-chevron { margin-left: auto; color: var(--text-ghost); font: 400 20px/1 var(--user-font); transition: transform .18s ease; }
+.thinking-trace-toggle.is-expanded .thinking-trace-chevron { transform: rotate(90deg); }
+.thinking-trace-detail { display: none; width: min(100%, 720px); margin: 0 0 10px; padding: 5px 0 3px 14px; }
+.thinking-trace-detail.visible { display: block; animation: fadeUp .16s ease both; }
+.thinking-trace-timeline { position: relative; padding: 3px 0 2px 27px; }
+.thinking-trace-timeline::before {
+  content: ""; position: absolute; top: 12px; bottom: 16px; left: 8px; width: 1px;
+  background: rgba(255,255,255,.14);
+}
+.thinking-trace-item { position: relative; display: flex; gap: 10px; margin: 0; padding: 8px 0 12px; }
+.thinking-trace-item:last-child { padding-bottom: 8px; }
+.thinking-trace-item-icon { position: absolute; left: -27px; top: 8px; z-index: 1; display: grid; place-items: center; width: 18px; height: 18px; color: var(--text-faint); background: var(--bg); font-size: 16px; }
+.thinking-trace-item-main { min-width: 0; width: 100%; }
+.thinking-trace-item-title { color: var(--text-dim); font-size: 13px; font-weight: 750; line-height: 1.35; }
+.thinking-trace-item-summary { margin-top: 3px; color: var(--text-faint); font-size: 12px; line-height: 1.55; }
+.thinking-trace-raw-toggle { display: inline-flex; margin-top: 7px; padding: 0; border: 0; background: transparent; color: var(--accent-text); font: 600 11px/1.2 var(--user-font); cursor: pointer; }
+.thinking-trace-raw-toggle:hover { color: var(--text); }
+.thinking-trace-raw { display: none; max-height: 240px; margin: 8px 0 0; padding: 9px 10px; overflow: auto; border: 1px solid var(--border-soft); border-radius: 8px; background: rgba(255,255,255,.025); color: var(--text-faint); font: 11px/1.55 var(--mono-font); white-space: pre-wrap; overflow-wrap: anywhere; }
+.thinking-trace-item.raw-visible .thinking-trace-raw { display: block; }
+.trace-tool .thinking-trace-item-title { color: var(--text-dim); font-weight: 650; }
+.trace-line-only { padding-top: 6px; padding-bottom: 6px; }
+.trace-line-only .thinking-trace-item-title { font-weight: 600; }
+.trace-line-only .thinking-trace-item-icon { top: 6px; }
+.trace-memory .thinking-trace-item-title { color: var(--text-faint); font-weight: 600; }
+.trace-memory .thinking-trace-raw-toggle, .trace-memory .thinking-trace-raw { display: none !important; }
+.trace-subagent .thinking-trace-item-title { margin-bottom: 8px; }
+.subagent-trace-card { padding: 13px 14px; border: 1px solid var(--border); border-radius: 15px; background: rgba(255,255,255,.035); }
+.subagent-trace-agent + .subagent-trace-agent { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--border-soft); }
+.subagent-trace-name { color: var(--text); font-size: 13px; font-weight: 750; line-height: 1.4; }
+.subagent-trace-output { margin-top: 5px; color: var(--text-faint); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.thinking-trace-completed { display: flex; align-items: center; gap: 8px; margin-top: 3px; padding-top: 8px; color: var(--text-faint); font-size: 12px; font-weight: 650; }
+.thinking-trace-completed .ph { font-size: 17px; color: var(--text-dim); }
+@keyframes traceTextShimmer { 0% { background-position: 190% 0; } 100% { background-position: -30% 0; } }
+@keyframes traceActivityPulse { 0%, 100% { opacity: .35; transform: scale(.85); } 50% { opacity: 1; transform: scale(1); } }
+@media (max-width: 600px) {
+  .thinking-trace-detail { padding-left: 7px; }
+  .thinking-trace-timeline { padding-left: 24px; }
+  .thinking-trace-item-icon { left: -24px; }
+  .subagent-trace-card { padding: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thinking-trace-preview.is-shimmer, .thinking-trace-current-dot.is-running { animation: none; }
+  .thinking-trace-detail.visible { animation: none; }
 }

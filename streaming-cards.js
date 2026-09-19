@@ -379,6 +379,52 @@ function appendThinkingSegment(state, delta) {
 function finalizeThinkingSegment(state) {
   if (state?.cur) BOREAS_finalizeSegment(state.cur);
 }
+
+function updateThinkingSummary(state, summary) {
+  const trace = state?.trace;
+  if (!trace || !summary) return;
+  state.thinkingSummary = summary;
+  trace.items.filter(item => item?.kind === "thinking").forEach(entry => {
+    const phases = BOREAS_tracePhasesForSegment(summary, entry.segmentIndex);
+    if (!phases.length || !entry.items?.length) return;
+    const built = phases.map(phase => BOREAS_traceBuildThinkingItem(phase, entry.raw));
+    entry.items[0].replaceWith(...built.map(part => part.item));
+    entry.items = built.map(part => part.item);
+    entry.rawEls = built.map(part => part.rawEl);
+    entry.summaryEls = built.map(part => part.summaryEl);
+  });
+  const latest = [...trace.items].reverse().find(item => item?.kind === "thinking");
+  const latestPhase = latest ? BOREAS_tracePhasesForSegment(summary, latest.segmentIndex).at(-1) : null;
+  if (latestPhase) BOREAS_traceSetPreview(state, latestPhase.title);
+}
+
+// The summary is persisted asynchronously after the main response is saved.
+// All completion paths (live stream, resume, regenerate, and reconnect) use
+// the same short poll so the current DOM does not require a full reload to
+// receive it.
+function refreshPersistedThinkingSummary({ chatId, genId, activity, assistantMessage } = {}) {
+  if (!chatId || !genId || !activity?.trace) return;
+  const run = async attempt => {
+    if (localStorage.getItem(ACTIVE_KEY) !== chatId) return;
+    try {
+      const response = await fetch(`${BACKEND_URL}/chats/${encodeURIComponent(chatId)}`, {
+        headers: BoreasSessionHeaders(), credentials: "include",
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const savedAssistant = data?.chat?.messages?.find(message => message?.role === "assistant" && message.genId === genId);
+      if (savedAssistant?.thinkingSummary) {
+        if (assistantMessage && typeof assistantMessage === "object") assistantMessage.thinkingSummary = savedAssistant.thinkingSummary;
+        updateThinkingSummary(activity, savedAssistant.thinkingSummary);
+      } else if (attempt < 3) {
+        setTimeout(() => { void run(attempt + 1); }, 1200 * (attempt + 1));
+      }
+    } catch {
+      if (attempt < 3) setTimeout(() => { void run(attempt + 1); }, 1200 * (attempt + 1));
+    }
+  };
+  setTimeout(() => { void run(0); }, 900);
+}
 // Closes the open segment (if any) and resets the pointer, without opening
 // a new one; used before standalone widgets (e.g. sub-agents) that don't
 // belong to any "Thinking process"/"Tools" pill. Without this, reasoning

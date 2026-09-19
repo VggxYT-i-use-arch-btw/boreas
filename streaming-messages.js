@@ -1,7 +1,7 @@
 // Boreas frontend module: message rendering, actions, context menu, editing, and retry.
 // Loaded as a classic script in the exact order declared by index.html.
 
-function appendMessage(role, content, imageB64, msgIndex, attachments, thinking, steps, activity, fileAttachment) {
+function appendMessage(role, content, imageB64, msgIndex, attachments, thinking, steps, activity, fileAttachment, thinkingSummary) {
   const emptyEl = document.getElementById("empty");
   if (emptyEl) emptyEl.remove();
 
@@ -85,6 +85,7 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
   // its own place in the conversation. For older chats, rebuilds the same
   // separation from the aggregated thinking and the known steps.
   if (col) {
+    const traceSummary = thinkingSummary || null;
     const sequence = Array.isArray(activity) && activity.length
       ? activity
       : [
@@ -94,8 +95,9 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
     const activityState = {};
     sequence.forEach((item, idx) => {
       if (item?.type === "thinking" && String(item.text ?? "").trim()) {
+        if (!activityState.thinkingSummary) activityState.thinkingSummary = traceSummary;
         ensureThinkingSegment(activityState, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
-        appendThinkingSegment(activityState, String(item.text));
+        appendThinkingSegment(activityState, String(item.text), activityState.thinkingSummary);
       } else if (item?.type === "tool") {
         ensureToolActivityCard(col, item, activityState, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
         if (item.output !== undefined && item.output !== "") {

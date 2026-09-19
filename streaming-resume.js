@@ -286,8 +286,10 @@ async function resumePending(pluginOverride) {
     }
     if (!responseBubble && !reply && !reasoning) appendMessage("bot", "Sem resposta.");
     if (messages !== streamMessages || localStorage.getItem(ACTIVE_KEY) !== streamChatId) { stopElapsedTicker(); return; }
-    messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}) });
+    const finalAssistantMsg = { role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), ...(currentGenId ? { genId: currentGenId } : {}) };
+    messages.push(finalAssistantMsg);
     saveCurrentMessages();
+    refreshPersistedThinkingSummary({ chatId: streamChatId, genId: currentGenId, activity, assistantMessage: finalAssistantMsg });
     updateRegenerateAvailability();
     if (responseBubble) responseBubble._rawText = reply;
     stopElapsedTicker();
@@ -315,6 +317,7 @@ async function resumePending(pluginOverride) {
 
 (async function initChats() {
 
+  const loadGenerationAtBoot = chatLoadGeneration;
   let syncDone = false;
   const syncPromise = syncChatsFromServer().then(() => { syncDone = true; });
   try { await Promise.race([syncPromise, new Promise(r => setTimeout(r, 8000))]); } catch {}
@@ -329,7 +332,19 @@ async function resumePending(pluginOverride) {
       const allNow = Object.values(_chatsMeta).filter(c => c.hasMessages).sort((a, b) =>
         (b.updatedAt ?? 0) > (a.updatedAt ?? 0) ? 1 : -1
       );
-      if (allNow.length > 0 && currentMeta && !currentMeta.hasMessages && messages.length === 0) {
+      // Bug fix: this used to check `messages.length === 0` as a proxy for
+      // "no load already in flight for currentId", but that's the wrong
+      // signal — the initial loadChat() below can still be awaiting its
+      // fetch/restoreImages when this late syncPromise resolves, so
+      // `messages` reads as empty even though a load is already underway.
+      // Racing a second loadChat(allNow[0].id) against it let both calls
+      // clear the guard at chatLoadGeneration independently and both
+      // populate messagesEl, duplicating every message. Guard on the load
+      // generation itself instead, and only fire if we're still on the
+      // chat this check is about (currentId), not a stale currentMeta read.
+      const noLoadInFlight = loadGenerationAtBoot === chatLoadGeneration;
+      if (allNow.length > 0 && currentMeta && !currentMeta.hasMessages
+          && currentId === allNow[0].id && noLoadInFlight) {
         loadChat(allNow[0].id);
       }
     }).catch(() => {});

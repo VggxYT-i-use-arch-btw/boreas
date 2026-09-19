@@ -91,9 +91,17 @@ const _markdownRenderState = new WeakMap();
 const _mathMarkerRe = /\$\$|\$[^$\n]+\$|\\\(|\\\[/;
 const MARKDOWN_RENDER_INTERVAL_MS = 33;
 
+// Counts completed sentences/paragraphs so the fade-in below can trigger
+// once per sentence instead of once per ~33ms render.
+function _countSentenceEnds(str) {
+  const m = String(str ?? "").match(/[.!?](?:["')\]]?(?:\s|$))|\n\s*\n/g);
+  return m ? m.length : 0;
+}
+
 function renderMarkdownNow(el, text) {
   if (!el || el._renderedMarkdownText === text) return;
   const grew = typeof el._renderedMarkdownText === "string" && text.startsWith(el._renderedMarkdownText);
+  const _prevText = el._renderedMarkdownText;
   el._renderedMarkdownText = text;
   try {
     if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
@@ -129,21 +137,25 @@ function renderMarkdownNow(el, text) {
     // Smooth generation fade-in: markdown must be re-parsed on the full
     // accumulated text each render (an open "**" mid-word breaks the
     // parser otherwise), so this can't be genuinely append-only at the DOM
-    // node level without risking broken formatting. Instead, a short CSS
-    // opacity fade is applied to the whole bubble on every render where the
-    // text actually grew (never on a no-op re-render, and never on edits/
-    // shrinks, which aren't streaming growth). Pure opacity, no filter/blur
-    // per the performance notes; will-change is set only for the animation
-    // window and cleared right after.
+    // node level without risking broken formatting. The fade targets
+    // ".stream-fade-in > :last-child" (the whole last block), so firing it
+    // on every ~33ms render - as text keeps growing inside that same
+    // block - just kept re-fading the entire accumulated paragraph, which
+    // read as a flicker instead of a smooth reveal. Firing it only when a
+    // new sentence/paragraph has actually completed fixes that, and
+    // incidentally also cuts how often the forced reflow below runs.
     if (grew && el.isConnected) {
-      el.classList.remove("stream-fade-in");
-      // Forces a reflow so the animation restarts even if the previous one
-      // is still finishing - without this, rapid renders (every ~33ms)
-      // would just no-op the class toggle and never re-trigger the fade.
-      void el.offsetWidth;
-      el.classList.add("stream-fade-in");
-      clearTimeout(el._streamFadeCleanup);
-      el._streamFadeCleanup = setTimeout(() => el.classList.remove("stream-fade-in"), 220);
+      const prevSentences = _countSentenceEnds(_prevText);
+      const newSentences = _countSentenceEnds(text);
+      if (newSentences > prevSentences) {
+        el.classList.remove("stream-fade-in");
+        // Forces a reflow so the animation restarts even if the previous one
+        // is still finishing.
+        void el.offsetWidth;
+        el.classList.add("stream-fade-in");
+        clearTimeout(el._streamFadeCleanup);
+        el._streamFadeCleanup = setTimeout(() => el.classList.remove("stream-fade-in"), 220);
+      }
     }
   }
 }

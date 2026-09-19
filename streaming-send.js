@@ -136,6 +136,11 @@ async function send() {
     const reader = res.body.getReader(); const decoder = new TextDecoder();
     let reply = "", reasoning = "", buffer = "";
     let msgAttachments = [];
+    // Tracks the provisional assistant message object (if any) written by
+    // the image_generation checkpoint save below, so the final push at
+    // stream-end can overwrite that same slot instead of appending a
+    // second assistant message for one reply.
+    let pendingAssistantCheckpoint = null;
     let attachmentBase64Bytes = 0;
     const MAX_SSE_BUFFER = 8 * 1024 * 1024;
     const MAX_ATTACHMENT_BASE64 = 24 * 1024 * 1024;
@@ -278,6 +283,39 @@ async function send() {
                 ...msgAttachments.filter(a => !(a.type === "generated_image" && a.image_id === chunk.image_id)),
                 { type: "generated_image", image_id: chunk.image_id, status: chunk.status, aspect_ratio: chunk.aspect_ratio, width: chunk.width, height: chunk.height, is_edit: chunk.is_edit },
               ];
+              // Bug fix: the file/DB row for this image is already durable
+              // on the server at this point (createGeneratedImageRecord +
+              // markGeneratedImageReady already ran server-side), but until
+              // now msgAttachments only lived in this function's local
+              // scope - nothing reached `messages`/saveCurrentMessages()
+              // until the whole stream finished. Leaving the chat (tab
+              // close, switching conversations) between an image going
+              // "ready" and the reply's final text arriving discarded this
+              // variable entirely, so the history never recorded the
+              // image_id - the file stayed on disk with nothing in any
+              // chat pointing at it. Checkpoint-save a provisional
+              // assistant message here so the reference survives an early
+              // exit; the final push at stream-end still replaces this
+              // same slot (same streamMessages array, same index) once the
+              // full reply lands, and mergeAttachments on the server keeps
+              // this attachment either way since ASSISTANT_EXTRA_FIELDS
+              // carries it forward when a later save doesn't repeat it.
+              if (messages === streamMessages && localStorage.getItem(ACTIVE_KEY) === streamChatId) {
+                const checkpointIdx = messages.indexOf(pendingAssistantCheckpoint);
+                const checkpointMsg = {
+                  role: "assistant",
+                  content: (responseBubble?._rawText ?? reply ?? ""),
+                  attachments: msgAttachments,
+                  ...(currentGenId ? { genId: currentGenId } : {}),
+                };
+                if (checkpointIdx !== -1) {
+                  messages[checkpointIdx] = checkpointMsg;
+                } else {
+                  messages.push(checkpointMsg);
+                }
+                pendingAssistantCheckpoint = checkpointMsg;
+                saveCurrentMessages();
+              }
             }
             continue;
           }
@@ -397,8 +435,17 @@ async function send() {
     // genId on the message lets the reconnection flow (syncGenerationOnce)
     // reliably detect whether this generation was already appended,
     // instead of comparing text.
-    messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), ...(currentGenId ? { genId: currentGenId } : {}) });
+    const finalAssistantMsg = { role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), ...(currentGenId ? { genId: currentGenId } : {}) };
+    // If an image_generation checkpoint already pushed a provisional
+    // assistant message for this reply, replace that same slot instead of
+    // pushing a second one - otherwise every reply containing an image
+    // would duplicate itself in the history.
+    const checkpointIdx = pendingAssistantCheckpoint ? messages.indexOf(pendingAssistantCheckpoint) : -1;
+    if (checkpointIdx !== -1) messages[checkpointIdx] = finalAssistantMsg;
+    else messages.push(finalAssistantMsg);
     saveCurrentMessages();
+    const completedGenId = currentGenId;
+    refreshPersistedThinkingSummary({ chatId: streamChatId, genId: completedGenId, activity, assistantMessage: finalAssistantMsg });
     updateRegenerateAvailability();
     if (responseBubble && !responseBubble._rawText) responseBubble._rawText = reply;
     clearPendingGen(); currentGenId = null;

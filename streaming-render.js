@@ -263,6 +263,14 @@ async function syncGenerationOnce(genId) {
         messages.push({ role: "assistant", content: reply, ...(msgAttachments.length ? { attachments: msgAttachments } : {}), genId });
       }
       saveCurrentMessages();
+      refreshPersistedThinkingSummary({
+        // The pending marker was cleared above once the replay reached DONE;
+        // the active chat is the authoritative scope for this DOM update.
+        chatId: localStorage.getItem(ACTIVE_KEY),
+        genId,
+        activity,
+        assistantMessage: messages.find(message => message?.role === "assistant" && message.genId === genId),
+      });
       updateRegenerateAvailability();
       if (responseBubble) responseBubble._rawText = reply;
     }

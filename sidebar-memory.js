@@ -134,19 +134,17 @@ function renderPrivacyView(body) {
 
 async function renderFontView(body) {
   body.innerHTML = `<div id="font-list-wrap"><div class="usage-loading">Carregando...</div></div>`;
-  // NOTE (bug #18, revisado 2026-09-02): "Geist" é a fonte padrão real do
-  // app desde o redesign anti-slop (ver --user-font em styles.css), mas
-  // não está na lista AVAILABLE_FONTS do back-end (config/runtime.js) -
-  // essa lista é só de fontes alternativas de personalização, não inclui
-  // a fonte padrão. O bug original era o fallback aqui apontar para
-  // "Inter", que É um item real da lista e por isso aparecia marcado
-  // como "selected" mesmo quando o usuário nunca escolheu Inter
-  // explicitamente. Trocando para "Geist" o problema se resolve por
-  // consequência: como Geist não está na lista, nenhum item fica marcado
-  // quando não há preferência customizada salva - que é o comportamento
-  // correto (nenhuma das alternativas foi escolhida, então nenhuma deve
-  // aparecer com check).
-  let current = { font: localStorage.getItem("boreas_font") || "Geist", availableFonts: [] };
+  // NOTE (bug #18, revisado 2026-09-16): "Faculty Glyphic" é a fonte
+  // padrão real do app (ver --user-font em styles.css/ui-refresh.css) E
+  // também está listada em AVAILABLE_FONTS do back-end (config/runtime.js)
+  // - diferente do comportamento antigo (Geist ficava fora da lista de
+  // propósito), agora o padrão aparece propositalmente marcado como
+  // "selected" na lista quando não há preferência customizada salva,
+  // já que é a opção ativa de fato. O fallback "Inter" do endpoint
+  // /appearance também foi corrigido no back-end (routes/profile.js)
+  // para não aparecer marcado por engano quando o usuário nunca
+  // escolheu nada.
+  let current = { font: localStorage.getItem("boreas_font") || "Faculty Glyphic", availableFonts: [] };
   if (BoreasSync.isAuthed()) {
     try {
       const r = await fetch(BACKEND_URL + "/appearance", { headers: BoreasSessionHeaders(), credentials: "include" });
