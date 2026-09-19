@@ -114,7 +114,7 @@ let webSearchCapCache = true;
 async function syncWebSearchToggle() {
   if (!BoreasSync.isAuthed()) { asheetSearchToggle.classList.toggle("on", webSearchCapCache); return; }
   try {
-    const r = await fetch(BACKEND_URL + "/capabilities", { headers: BoreasSessionHeaders(), credentials: "include" });
+    const r = await BoreasFetchWithTimeout(BACKEND_URL + "/capabilities", { headers: BoreasSessionHeaders(), credentials: "include" });
     if (r.ok) webSearchCapCache = (await r.json()).capabilities?.webSearch !== false;
   } catch {}
   asheetSearchToggle.classList.toggle("on", webSearchCapCache);
@@ -126,12 +126,12 @@ asheetSearchToggle.addEventListener("click", async e => {
   asheetSearchToggle.classList.toggle("on", webSearchCapCache);
   if (!BoreasSync.isAuthed()) return;
   try {
-    const response = await fetch(BACKEND_URL + "/capabilities", {
+    const response = await BoreasFetchWithTimeout(BACKEND_URL + "/capabilities", {
       method: "PUT",
         headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
       credentials: "include",
       body: JSON.stringify({ webSearch: webSearchCapCache }),
-    });
+    }, 8000);
     if (!response.ok) throw await boreasHttpError(response);
   } catch (error) {
     webSearchCapCache = previous;
@@ -328,7 +328,7 @@ lightboxViewport.addEventListener("pointerleave", e => { if (lbPointers.has(e.po
 async function lightboxFetchBlob() {
   const src = lightboxImg.src;
   if (!src) return null;
-  const response = await fetch(src, { credentials: "include" });
+  const response = await BoreasFetchWithTimeout(src, { credentials: "include" }, 15000);
   if (!response.ok) return null;
   return response.blob();
 }

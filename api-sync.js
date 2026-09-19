@@ -205,6 +205,18 @@ const BoreasSync = (() => {
   globalThis.BoreasSessionHeaders = function (extra = {}) {
     return { ...extra };
   };
+  globalThis.BoreasFetchWithTimeout = async function (input, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const onAbort = () => controller.abort();
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    try {
+      return await fetch(input, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener("abort", onAbort);
+    }
+  };
 
   async function serverAccountScope() {
     try {

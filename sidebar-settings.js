@@ -2,17 +2,28 @@
 // Loaded as a classic script in the exact order declared by index.html.
 
 async function generateTitle(chatId, promptText) {
+  const seed = String(promptText ?? "").trim().slice(0, 1000);
+  if (!seed) return;
+  const fallbackTitle = seed
+    .replace(/\s+/g, " ")
+    .replace(/^[\s\-–—:;,.!?]+|[\s\-–—:;,.!?]+$/g, "")
+    .slice(0, 80)
+    .trim();
+  const currentMeta = _chatsMeta[chatId];
+  if (currentMeta?.title === "Nova conversa" && fallbackTitle) setChatTitle(chatId, fallbackTitle);
   try {
-    const r = await fetch(BACKEND_URL + "/title", {
+    const r = await BoreasFetchWithTimeout(BACKEND_URL + "/title", {
       method: "POST",
       headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
       credentials: "include",
-      body: JSON.stringify({ prompt: promptText.slice(0, 400) }),
+      body: JSON.stringify({ prompt: seed }),
     });
     if (!r.ok) return;
     const { title } = await r.json();
-    if (title) setChatTitle(chatId, title);
-  } catch {}
+    if (title && _chatsMeta[chatId]?.title === fallbackTitle) setChatTitle(chatId, title);
+  } catch (error) {
+    console.warn("[generateTitle] falha ao gerar título:", error?.message || error);
+  }
 }
 
 const sidebarEl    = document.getElementById("sidebar");
@@ -140,7 +151,9 @@ function renderSidebar() {
     const emptyText = searchQuery
       ? (window.__boreasSearchPending ? "Buscando nas mensagens…" : "Nenhum conteúdo encontrado")
       : "Nenhum chat ainda";
-    listEl.innerHTML = `<div class="sidebar-empty-msg">${emptyText}</div>`;
+    const emptyIcon = searchQuery ? "ph-magnifying-glass" : "ph-chats-circle";
+    const pending = searchQuery && window.__boreasSearchPending;
+    listEl.innerHTML = `<div class="sidebar-empty-msg"><i class="ph ${emptyIcon}" aria-hidden="true"></i>${pending ? '<span class="ui-skeleton ui-skeleton-line" aria-label="Buscando"></span>' : `<span>${emptyText}</span>`}</div>`;
     return;
   }
 
@@ -378,7 +391,7 @@ async function renderProfileView(body) {
 
   if (BoreasSync.isAuthed()) {
     try {
-      const r = await fetch(BACKEND_URL + "/profile", { headers: BoreasSessionHeaders(), credentials: "include" });
+      const r = await BoreasFetchWithTimeout(BACKEND_URL + "/profile", { headers: BoreasSessionHeaders(), credentials: "include" });
       if (r.ok) {
         const data = await r.json();
         nameEl.value = data.name ?? nameEl.value;
@@ -399,7 +412,7 @@ async function renderProfileView(body) {
     if (!BoreasSync.isAuthed()) return;
     saveBtn.disabled = true; saveBtn.textContent = "Salvando...";
     try {
-      const r = await fetch(BACKEND_URL + "/profile", {
+      const r = await BoreasFetchWithTimeout(BACKEND_URL + "/profile", {
         method: "PUT",
         headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
         credentials: "include",
@@ -430,7 +443,7 @@ function renderUsageView(body) {
       <button class="usage-tab" data-period="last_3_months">3 meses</button>
       <button class="usage-tab" data-period="all_time">Total</button>
     </div>
-    <div id="usage-display"><div class="usage-loading">Carregando...</div></div>
+    <div id="usage-display"><div class="usage-loading"><span class="ui-skeleton ui-skeleton-line" aria-label="Carregando"></span></div></div>
   `;
   document.getElementById("usage-tabs").addEventListener("click", e => {
     const btn = e.target.closest(".usage-tab");
@@ -489,7 +502,7 @@ async function renderCapabilitiesView(body) {
   let current = { webSearch: true, artifacts: true, codeExecution: true };
   if (BoreasSync.isAuthed()) {
     try {
-      const r = await fetch(BACKEND_URL + "/capabilities", { headers: BoreasSessionHeaders(), credentials: "include" });
+      const r = await BoreasFetchWithTimeout(BACKEND_URL + "/capabilities", { headers: BoreasSessionHeaders(), credentials: "include" });
       if (r.ok) current = (await r.json()).capabilities;
     } catch {}
   }
@@ -501,7 +514,7 @@ async function renderCapabilitiesView(body) {
       el.classList.toggle("on", next);
       if (!BoreasSync.isAuthed()) return;
       try {
-        const response = await fetch(BACKEND_URL + "/capabilities", {
+        const response = await BoreasFetchWithTimeout(BACKEND_URL + "/capabilities", {
           method: "PUT",
           headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
           credentials: "include",

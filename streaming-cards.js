@@ -115,12 +115,20 @@ async function finish() {
       try {
         const safePromptId = encodeURIComponent(String(promptId ?? ""));
         if (!safePromptId || safePromptId === "%22%22") throw new Error("prompt inválido");
-        const response = await fetch(BACKEND_URL + "/prompt-response/" + safePromptId, {
-          method: "POST",
-          headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
-          credentials: "include",
-          body: JSON.stringify({ answers }),
-        });
+        const responseController = new AbortController();
+        const responseTimer = setTimeout(() => responseController.abort(), 15000);
+        let response;
+        try {
+          response = await fetch(BACKEND_URL + "/prompt-response/" + safePromptId, {
+            method: "POST",
+            headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
+            credentials: "include",
+            body: JSON.stringify({ answers }),
+            signal: responseController.signal,
+          });
+        } finally {
+          clearTimeout(responseTimer);
+        }
         if (!response.ok) throw await boreasHttpError(response);
         responseDelivered = true;
       } catch (e) { console.error("[aup] falha ao enviar resposta:", e); }
@@ -255,129 +263,10 @@ function renderAskUserPromptRecap(col, { questions, answers, timedOut }) {
   col.appendChild(card);
 }
 
-// "Additional thinking": once the model has used at least one tool, any
-// further reasoning_content becomes a collapsible item INSIDE the
-// "Running" timeline (same mechanic as tool task items), instead of piling
-// up on the top "Working" pill. Each new thinking round after a tool
-// becomes a new item; the "step" handler calls closeExtraThink() to close
-// the current item as soon as a new tool runs.
-function ensureExtraThinkItem(stepsDetail, state) {
-  if (state.el) return state;
-  state.text = "";
-  const taskEl = document.createElement("div"); taskEl.className = "task-item task-item-think expandable";
-  const hdr = document.createElement("div"); hdr.className = "task-item-header expandable";
-  const iSpan = document.createElement("span"); iSpan.className = "task-item-icon"; iSpan.innerHTML = "💭";
-  const lSpan = document.createElement("span"); lSpan.className = "task-item-label"; lSpan.textContent = "Raciocínio";
-  const chev = document.createElement("span"); chev.className = "task-item-chevron";
-  chev.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-  hdr.appendChild(iSpan); hdr.appendChild(lSpan); hdr.appendChild(chev);
-  const body = document.createElement("div"); body.className = "task-item-body";
-  const outEl = document.createElement("pre"); outEl.className = "task-output";
-  body.appendChild(outEl);
-  taskEl.appendChild(hdr); taskEl.appendChild(body);
-  hdr.addEventListener("click", () => taskEl.classList.toggle("expanded"));
-  // Appends straight to the end of the timeline, without grouping by
-  // section, preserving the real chronological order (reasoning
-  // interleaved with tools, in the sequence they happened) instead of
-  // pushing everything into a separate "THINKING" section.
-  stepsDetail.appendChild(taskEl);
-  state.el = taskEl; state.outEl = outEl;
-  return state;
-}
-// Creates (once) the single "Thinking process" pill plus the timeline below
-// it, used for both reasoning and tool calls; replaces the two separate
-// pills (thinking-pill + tasks-pill "N tasks") that used to exist
-// separately in each streaming function.
-function ensureActivityPill(state, mountFn) {
-  if (state.pill) return state;
-  state.pill = document.createElement("button"); state.pill.className = "tasks-pill";
-  state.pill.innerHTML = `<span class="thinking-segment-icon">${BOREAS_BRAIN_ICON}</span><span>Processo de pensamento</span><span class="tp-dots"><span></span><span></span><span></span></span><svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-  const activityBrainIcon = state.pill.querySelector("span:first-child");
-  if (activityBrainIcon) activityBrainIcon.innerHTML = BOREAS_BRAIN_ICON;
-  state.detail = document.createElement("div"); state.detail.className = "tasks-detail";
-  state.pill.addEventListener("click", () => {
-    if (typeof isMobile !== "undefined" && isMobile) {
-      openSheet(state.detail.textContent.trim() || "Nenhum detalhe adicional.");
-      state.pill.classList.add("expanded");
-      return;
-    }
-    state.pill.classList.toggle("expanded");
-    state.detail.classList.toggle("visible");
-  });
-  mountFn(state.pill, state.detail);
-  return state;
-}
-// Removes the "in progress" dots once the generation ends.
-function finalizeActivityPill(state) {
-  if (!state.pill) return;
-  const dots = state.pill.querySelector(".tp-dots");
-  if (dots) dots.remove();
-}
-function appendExtraThink(stepsDetail, state, delta) {
-  ensureExtraThinkItem(stepsDetail, state);
-  state.text += delta;
-  state.outEl.textContent = state.text;
-}
-function closeExtraThink(state) { state.el = null; state.outEl = null; state.text = ""; }
-
-// Single icon for the thinking process. The markup below is reapplied
-// after mounting to keep the same artwork across all flows.
-const BOREAS_BRAIN_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5a3 3 0 1 0-5.997.125A4 4 0 0 0 3.5 9.75a4 4 0 0 0 1.03 6.79A4 4 0 0 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125A4 4 0 0 1 20.5 9.75a4 4 0 0 1-1.03 6.79A4 4 0 0 1 12 18Z"/><path d="M12 5v13"/><path d="M9 7.5a4 4 0 0 0 3 3.5"/><path d="M15 7.5a4 4 0 0 1-3 3.5"/><path d="M9 15a4 4 0 0 1 3-3.5"/><path d="M15 15a4 4 0 0 0-3-3.5"/></svg>`;
-
-// Burst-based renderer: every "type" switch (reasoning <-> tool calls)
-// closes the current segment and opens a new collapsible one, in the order
-// it happened, instead of one single timeline accumulating everything from
-// the whole response. `state` (the "activity") holds the list of closed
-// segments (`state.segments`) and the currently open one (`state.cur`).
-const TOOL_GROUP_ICON = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4l-6 6a2.1 2.1 0 0 0 3 3l6-6a4 4 0 0 0 5.4-5.4l-2.4 2.4-3-3Z"></path></svg>`;
-function BOREAS_createSegmentShell(kind) {
-  const pill = document.createElement("button");
-  pill.className = "thinking-segment-pill" + (kind === "tool" ? " tool-segment-pill" : "");
-  const icon = kind === "tool" ? TOOL_GROUP_ICON : BOREAS_BRAIN_ICON;
-  const title = kind === "tool" ? "Ferramentas" : "Processo de pensamento";
-  const initialStatus = kind === "tool" ? "Executando" : "Pensando";
-  pill.innerHTML = `<span class="thinking-segment-icon">${icon}</span><span>${title}</span><span class="thinking-segment-status">${initialStatus}</span><svg class="thinking-segment-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-  const detail = document.createElement("div"); detail.className = "thinking-segment-detail";
-  const seg = { kind, pill, detail, stepCount: 0 };
-  if (kind === "tool") {
-    seg.itemsEl = document.createElement("div"); seg.itemsEl.className = "thinking-segment-items";
-    detail.appendChild(seg.itemsEl);
-  } else {
-    seg.textEl = document.createElement("div"); seg.textEl.className = "thinking-segment-text";
-    seg.text = "";
-    detail.appendChild(seg.textEl);
-  }
-  pill.addEventListener("click", () => { pill.classList.toggle("expanded"); detail.classList.toggle("visible"); });
-  return seg;
-}
-function BOREAS_finalizeSegment(seg) {
-  if (!seg?.pill) return;
-  seg.pill.classList.add("is-complete");
-  const status = seg.pill.querySelector(".thinking-segment-status");
-  if (!status) return;
-  status.textContent = seg.kind === "tool" ? `${seg.stepCount || 0} ${seg.stepCount === 1 ? "passo" : "passos"}` : "Concluído";
-}
-// Returns the open segment of the requested kind; if the currently open
-// segment is of a different kind, closes it and starts a new collapsible one.
-function BOREAS_getSegment(state, kind, mountFn) {
-  if (state.cur && state.cur.kind === kind) return state.cur;
-  if (state.cur) BOREAS_finalizeSegment(state.cur);
-  const seg = BOREAS_createSegmentShell(kind);
-  mountFn(seg.pill, seg.detail);
-  (state.segments ?? (state.segments = [])).push(seg);
-  state.cur = seg;
-  return seg;
-}
-function ensureThinkingSegment(state, mountFn) { return BOREAS_getSegment(state, "thinking", mountFn); }
-function ensureToolSegment(state, mountFn) { return BOREAS_getSegment(state, "tool", mountFn); }
-function appendThinkingSegment(state, delta) {
-  const seg = state?.cur?.kind === "thinking" ? state.cur : null;
-  if (!seg) return;
-  seg.text += delta;
-  seg.textEl.textContent = seg.text;
-}
-function finalizeThinkingSegment(state) {
-  if (state?.cur) BOREAS_finalizeSegment(state.cur);
+// Compatibility hook for older stream call sites. The unified Phosphor trace
+// in streaming-trace.js owns the live/replay visual state now.
+function closeExtraThink(state) {
+  if (state) { state.el = null; state.outEl = null; state.text = ""; }
 }
 
 function updateThinkingSummary(state, summary) {
@@ -387,10 +276,9 @@ function updateThinkingSummary(state, summary) {
   trace.items.filter(item => item?.kind === "thinking").forEach(entry => {
     const phases = BOREAS_tracePhasesForSegment(summary, entry.segmentIndex);
     if (!phases.length || !entry.items?.length) return;
-    const built = phases.map(phase => BOREAS_traceBuildThinkingItem(phase, entry.raw));
+    const built = phases.map(phase => BOREAS_traceBuildThinkingItem(phase));
     entry.items[0].replaceWith(...built.map(part => part.item));
     entry.items = built.map(part => part.item);
-    entry.rawEls = built.map(part => part.rawEl);
     entry.summaryEls = built.map(part => part.summaryEl);
   });
   const latest = [...trace.items].reverse().find(item => item?.kind === "thinking");
@@ -407,9 +295,9 @@ function refreshPersistedThinkingSummary({ chatId, genId, activity, assistantMes
   const run = async attempt => {
     if (localStorage.getItem(ACTIVE_KEY) !== chatId) return;
     try {
-      const response = await fetch(`${BACKEND_URL}/chats/${encodeURIComponent(chatId)}`, {
+      const response = await BoreasFetchWithTimeout(`${BACKEND_URL}/chats/${encodeURIComponent(chatId)}`, {
         headers: BoreasSessionHeaders(), credentials: "include",
-      });
+      }, 8000);
       if (!response.ok) return;
       const data = await response.json();
       const savedAssistant = data?.chat?.messages?.find(message => message?.role === "assistant" && message.genId === genId);

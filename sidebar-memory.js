@@ -98,11 +98,20 @@ async function renderConnectorsView(body) {
 
   const toggle = document.getElementById("cap-sandboxNetwork");
   let current = { sandboxNetwork: false };
+  let connectors = [];
   if (BoreasSync.isAuthed()) {
-    try {
-      const r = await fetch(BACKEND_URL + "/capabilities", { headers: BoreasSessionHeaders(), credentials: "include" });
-      if (r.ok) current = (await r.json()).capabilities ?? current;
-    } catch {}
+    const connectorResponse = await BoreasSync.request("/connectors", { retries: 1, timeoutMs: 5000 });
+    if (connectorResponse.ok) {
+      connectors = Array.isArray(connectorResponse.data?.connectors) ? connectorResponse.data.connectors : [];
+      const sandbox = connectors.find(connector => connector.id === "sandbox_network");
+      if (sandbox) current.sandboxNetwork = sandbox.enabled === true;
+    }
+  }
+  const extra = document.querySelector(".settings-connectors-empty");
+  if (extra) {
+    extra.innerHTML = connectors.length
+      ? connectors.map(connector => `<div class="settings-connectors-empty-title">${String(connector.name ?? connector.id)}</div><div class="settings-connectors-empty-desc">Escopo: ${String(connector.scope ?? "conta")}</div>`).join("")
+      : `<div class="settings-connectors-empty-title">Em breve</div><div class="settings-connectors-empty-desc">Integrações com outros serviços serão adicionadas aqui.</div>`;
   }
   toggle.classList.toggle("on", current.sandboxNetwork === true);
   toggle.setAttribute("aria-checked", String(current.sandboxNetwork === true));
@@ -111,18 +120,11 @@ async function renderConnectorsView(body) {
     toggle.classList.toggle("on", next);
     toggle.setAttribute("aria-checked", String(next));
     if (!BoreasSync.isAuthed()) return;
-    try {
-      const r = await fetch(BACKEND_URL + "/capabilities", {
-        method: "PUT",
-        headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
-        credentials: "include",
-        body: JSON.stringify({ sandboxNetwork: next }),
-      });
-      if (!r.ok) throw await boreasHttpError(r);
-    } catch (error) {
+    const result = await BoreasSync.request("/capabilities", { method: "PUT", body: { sandboxNetwork: next }, retries: 1, timeoutMs: 8000 });
+    if (!result.ok) {
       toggle.classList.toggle("on", !next);
       toggle.setAttribute("aria-checked", String(!next));
-      showToast(error?.message || "Não foi possível atualizar o acesso web da VM.");
+      showToast(result.error || "Não foi possível atualizar o acesso web da VM.");
     }
   });
 }
@@ -133,7 +135,7 @@ function renderPrivacyView(body) {
 }
 
 async function renderFontView(body) {
-  body.innerHTML = `<div id="font-list-wrap"><div class="usage-loading">Carregando...</div></div>`;
+  body.innerHTML = `<div id="font-list-wrap"><div class="usage-loading"><span class="ui-skeleton ui-skeleton-line" aria-label="Carregando"></span></div></div>`;
   // NOTE (bug #18, revisado 2026-09-16): "Faculty Glyphic" é a fonte
   // padrão real do app (ver --user-font em styles.css/ui-refresh.css) E
   // também está listada em AVAILABLE_FONTS do back-end (config/runtime.js)
@@ -147,7 +149,7 @@ async function renderFontView(body) {
   let current = { font: localStorage.getItem("boreas_font") || "Faculty Glyphic", availableFonts: [] };
   if (BoreasSync.isAuthed()) {
     try {
-      const r = await fetch(BACKEND_URL + "/appearance", { headers: BoreasSessionHeaders(), credentials: "include" });
+      const r = await BoreasFetchWithTimeout(BACKEND_URL + "/appearance", { headers: BoreasSessionHeaders(), credentials: "include" });
       if (r.ok) current = await r.json();
     } catch {}
   }
@@ -180,7 +182,7 @@ async function renderFontView(body) {
       wrap.querySelectorAll(".font-list-item").forEach(i => i.classList.toggle("selected", i === item));
       if (!BoreasSync.isAuthed()) return;
       try {
-        const response = await fetch(BACKEND_URL + "/appearance", {
+        const response = await BoreasFetchWithTimeout(BACKEND_URL + "/appearance", {
           method: "PUT",
           headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
           credentials: "include",
@@ -225,7 +227,7 @@ document.getElementById("sidebar-settings-btn").addEventListener("click", async 
 
   if (BoreasSync.isAuthed()) {
     try {
-      const r = await fetch(BACKEND_URL + "/appearance", { headers: BoreasSessionHeaders(), credentials: "include" });
+      const r = await BoreasFetchWithTimeout(BACKEND_URL + "/appearance", { headers: BoreasSessionHeaders(), credentials: "include" });
       if (r.ok) {
         const data = await r.json();
         if (data.font) applyFont(data.font);

@@ -72,7 +72,7 @@ async function resumePending(pluginOverride) {
     const tr = document.getElementById("typing-row");
     if (tr) {
       const b = tr.querySelector(".bubble");
-      if (b) b.innerHTML = `<span class="work-status-label">Em trabalho</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
+      if (b) b.innerHTML = `<span class="work-status-label">${boreasRandomWorkStatus()}</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
     }
   }, 1000);
 
@@ -239,15 +239,14 @@ async function resumePending(pluginOverride) {
             continue;
           }
 
-          const delta = chunk.choices?.[0]?.delta ?? {};
-          const rd = delta.reasoning_content ?? "", cd = delta.content ?? "";
-          if (rd) {
-            if (reasoning.length + String(rd).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
-            reasoning += rd; ensureMasterRowR();
+          if (chunk.type === "thinking_started") {
+            ensureMasterRowR();
             ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
-            appendThinkingSegment(activity, rd);
-            scrollToBottom();
+            continue;
           }
+
+          const delta = chunk.choices?.[0]?.delta ?? {};
+          const cd = delta.content ?? "";
           if (cd) {
             if (reply.length + String(cd).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
             if (!responseBubble) {

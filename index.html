@@ -49,12 +49,17 @@
     </div>
     <div class="ob-form-title" id="ob-form-title">Entrar na sua conta</div>
     <div class="ob-form-subtitle" id="ob-form-subtitle">Continue de onde parou.</div>
+    <label class="ob-form-label" for="ob-name">Seu nome</label>
     <div class="ob-register-fields" id="ob-register-fields">
       <input class="ob-input" id="ob-name" type="text" placeholder="Como quer ser chamado?" autocomplete="name">
+      <label class="ob-form-label" for="ob-use">Uso principal <span>(opcional)</span></label>
       <input class="ob-input" id="ob-use" type="text" placeholder="Para que vai usar o Boreas? (opcional)" autocomplete="off">
     </div>
+    <label class="ob-form-label" for="ob-email">E-mail</label>
     <input class="ob-input" id="ob-email" type="email" placeholder="Seu e-mail" autocomplete="email">
+    <label class="ob-form-label" for="ob-pass">Senha</label>
     <input class="ob-input" id="ob-pass" type="password" placeholder="Sua senha" autocomplete="current-password">
+    <label class="ob-form-label ob-register-only-label" for="ob-pass2">Confirme a senha</label>
     <input class="ob-input ob-register-fields" id="ob-pass2" type="password" placeholder="Confirme sua senha" autocomplete="new-password">
     <div class="ob-checkbox-row ob-register-fields" id="ob-terms-row">
       <div class="ob-checkbox" id="ob-checkbox">
@@ -106,28 +111,6 @@
             <div class="model-option-desc">Rápido, eficiente e ótimo para perguntas simples</div>
           </div>
         </div>
-        <div class="more-models-section" id="more-models-section">
-          <div class="more-models-btn" id="more-models-btn">
-            <span class="more-models-btn-label">Mais modelos</span>
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-          </div>
-          <div class="more-models-list" id="more-models-list">
-            <div class="model-option" data-tier="nebula1">
-              <svg class="model-option-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              <div class="model-option-info">
-                <div class="model-option-name">Boreas Nebula I</div>
-                <div class="model-option-desc">Velocidade e eficiência para tarefas de programação e raciocínio</div>
-              </div>
-            </div>
-            <div class="model-option" data-tier="starlight2">
-              <svg class="model-option-check" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-              <div class="model-option-info">
-                <div class="model-option-name">Boreas Starlight II</div>
-                <div class="model-option-desc">Excelente desempenho em matemática, raciocínio, programação e resolução de problemas</div>
-              </div>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
     <div class="effort-section" id="effort-section">
@@ -152,8 +135,8 @@
   <div id="messages">
     <div class="empty-state" id="empty">
       <img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/boreas.png" class="empty-logo-img" alt="Boreas" draggable="false">
-      <span class="empty-text">Como posso te ajudar esta tarde?</span>
-      <span class="empty-subtitle">Explore ideias, resolva problemas e construa algo novo.</span>
+      <span class="empty-text">Comece uma nova conversa</span>
+      <span class="empty-subtitle">Escolha um modelo, escreva uma mensagem e envie.</span>
     </div>
   </div>
 
@@ -226,7 +209,7 @@
     <input type="file" id="camera-input" accept="image/*" capture="environment">
     <input type="file" id="file-input" accept="image/*" multiple>
     <input type="file" id="any-file-input">
-    <textarea id="msg-input" rows="1" placeholder="Explore infinitas possibilidades..."></textarea>
+    <textarea id="msg-input" rows="1" placeholder="Escreva uma mensagem..."></textarea>
     <button id="send-btn" disabled>
       <img src="https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/send_msg.png" alt="Enviar mensagem" draggable="false">
     </button>
@@ -279,7 +262,7 @@
     <div class="settings-view active" id="view-main" data-view="main">
       <div class="settings-header">
         <span class="settings-title">Configurações</span>
-        <button class="settings-close" id="settings-close">✕</button>
+        <button class="settings-close" id="settings-close" aria-label="Fechar configurações"><i class="ph ph-x" aria-hidden="true"></i></button>
       </div>
       <div class="settings-body">
         <div class="settings-profile-card">
@@ -372,7 +355,7 @@
 
 <div id="coming-soon-overlay">
   <div class="coming-soon-card">
-    <div class="coming-soon-emoji">🚧</div>
+    <div class="coming-soon-emoji" aria-hidden="true"><i class="ph ph-wrench"></i></div>
     <div class="coming-soon-title">Em breve!</div>
     <div class="coming-soon-desc">Projetos ainda estão sendo desenvolvidos. Aguarde novidades!</div>
     <button class="coming-soon-btn" id="coming-soon-close">Entendido</button>

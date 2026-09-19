@@ -75,7 +75,7 @@ function renderUsage(period) {
 
 async function loadUsageStats() {
   const el = document.getElementById("usage-display");
-  el.innerHTML = '<div class="usage-loading">Carregando...</div>';
+  el.innerHTML = '<div class="usage-loading"><span class="ui-skeleton ui-skeleton-line" aria-label="Carregando"></span></div>';
   const data = await BoreasSync.usage.get(); // retries + falls back to last cached usage internally
   if (data) {
     _usageData = data.stats ?? null;

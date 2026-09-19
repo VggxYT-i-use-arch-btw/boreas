@@ -5,20 +5,17 @@ const TIERS = {
   solstice1:  { label: "Boreas Solstice I" },
   sunset2:    { label: "Boreas Sunset II" },
   horizon2: { label: "Boreas Horizon II" },
-  nebula1: { label: "Boreas Nebula I" },
-  starlight2: { label: "Boreas Starlight II" },
 };
 
-const TIER_SPEEDS = { altra1: "cheapest", solstice1: "cheapest", sunset2: "cheapest", horizon2: "fastest", nebula1: "fastest", starlight2: "fastest" };
+const TIER_SPEEDS = { altra1: "cheapest", solstice1: "cheapest", sunset2: "cheapest", horizon2: "fastest" };
 let ACCOUNT_SCOPE = "";
 let LAST_TIER_KEY = "";
 
-// Altra and Starlight (coding, text-only) keep vision disabled in the UI.
-// Nebula switched to DeepSeek-V4-Flash-Vision-Exp (native vision), so it's
-// no longer in this list. Keep in sync with NO_VISION_TIERS in
+// Altra (coding, text-only) keeps vision disabled in the UI. Keep in sync
+// with NO_VISION_TIERS in
 // back-end/sub_boreas/config/runtime.js.
-const NO_VISION_TIERS = ["altra1", "starlight2"];
-const NO_VISION_LABEL = { altra1: "Altra I", starlight2: "Starlight II" };
+const NO_VISION_TIERS = ["altra1"];
+const NO_VISION_LABEL = { altra1: "Altra I" };
 
 // Effort levels each tier actually accepts, ordered weakest -> strongest,
 // plus the level used when nothing valid is stored yet. Mirrors
@@ -28,15 +25,14 @@ const TIER_EFFORTS = {
   solstice1:  { levels: ["low", "high", "max"],             default: "high" },
   sunset2:    { levels: ["low", "medium", "xhigh"],         default: "xhigh" },
   horizon2:   { levels: ["low", "medium", "high", "xhigh"], default: "high" },
-  nebula1:    { levels: ["low", "high", "max"],             default: "high" },
-  starlight2: { levels: ["low", "high", "max"],             default: "high" },
 };
-// All six tiers now expose the effort control.
+// All remaining tiers expose the effort control.
 const EFFORT_TIERS = Object.keys(TIER_EFFORTS);
 // Label/description shown per level, not per tier - a given level name
 // (e.g. "high") reads the same regardless of which tier's ceiling it is.
-const EFFORT_LABELS = { low: "Baixo", medium: "Médio", high: "Alto", xhigh: "Máximo", max: "Máximo" };
+const EFFORT_LABELS = { intelligent: "Inteligente", low: "Baixo", medium: "Médio", high: "Alto", xhigh: "Máximo", max: "Máximo" };
 const EFFORT_DESCRIPTIONS = {
+  intelligent: "O classificador escolhe o esforço adequado para esta mensagem",
   low: "Para tarefas simples e rápidas",
   medium: "Para tarefas que exigem um pouco mais de pensamento",
   high: "Para trabalhos complexos e difíceis",
@@ -53,7 +49,7 @@ function lastEffortFor(tier) {
   const cfg = TIER_EFFORTS[tier];
   if (!cfg) return "default";
   const v = localStorage.getItem((ACCOUNT_SCOPE ? "boreas_last_effort_" + ACCOUNT_SCOPE + "_" : "boreas_last_effort_unauthed_") + tier);
-  return cfg.levels.includes(v) ? v : cfg.default;
+  return v === "intelligent" || cfg.levels.includes(v) ? v : cfg.default;
 }
 let currentEffort = "default";
 
@@ -72,7 +68,7 @@ function syncEffortUI() {
   const inner = document.getElementById("effort-list-inner");
   if (!inner) return;
   if (!supports) { inner.innerHTML = ""; return; }
-  inner.innerHTML = cfg.levels.map(level => `
+  inner.innerHTML = ["intelligent", ...cfg.levels].map(level => `
     <div class="effort-option${level === currentEffort ? " active" : ""}" data-effort="${level}">
       <svg class="effort-option-check" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
       <div class="effort-option-info">
@@ -407,7 +403,7 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
     );
   }
   currentEffort = EFFORT_TIERS.includes(currentTier)
-    ? (TIER_EFFORTS[currentTier].levels.includes(chat.effort) ? chat.effort : TIER_EFFORTS[currentTier].default)
+    ? (chat.effort === "intelligent" || TIER_EFFORTS[currentTier].levels.includes(chat.effort) ? chat.effort : TIER_EFFORTS[currentTier].default)
     : "default";
   syncEffortUI();
   updateImageAttach();
@@ -464,7 +460,7 @@ async function loadChat(id, { skipRemote = false, cachedChat = null } = {}) {
 
         const raw = typeof m.content === "string" ? m.content : "";
         const display = raw.replace(/^\[Ferramentas usadas nesta resposta:[\s\S]*?\]\n\n/, "");
-        appendMessage("bot", display, null, i, m.attachments, m.thinking, m.steps, m.activity, null, m.thinkingSummary);
+        appendMessage("bot", display, null, i, m.attachments, null, m.steps, m.activity, null, m.thinkingSummary);
       }
     }
     if (typeof updateRegenerateAvailability === "function") updateRegenerateAvailability();

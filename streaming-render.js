@@ -115,6 +115,7 @@ async function syncGenerationOnce(genId) {
   const controller = new AbortController();
   syncAbortController = controller;
   currentAbortController = controller;
+  let inactivityTimer = null;
   function ensureRow() {
     if (!masterRow) {
       removeTyping();
@@ -138,11 +139,18 @@ async function syncGenerationOnce(genId) {
     if (!res.ok) throw await boreasHttpError(res);
 
     const reader = res.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+    const armInactivityTimeout = () => {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => controller.abort(), 30000);
+    };
+    armInactivityTimeout();
     const MAX_SYNC_SSE_BUFFER = 8 * 1024 * 1024;
     const MAX_SYNC_RESPONSE_CHARS = 8 * 1024 * 1024;
     const syncByteEncoder = new TextEncoder();
     while (true) {
-      const { done, value } = await reader.read(); if (done) break;
+      const { done, value } = await reader.read();
+      if (done) break;
+      armInactivityTimeout();
       if (!value || value.byteLength > MAX_SYNC_SSE_BUFFER - syncByteEncoder.encode(buffer).byteLength) {
         await reader.cancel().catch(() => {});
         throw new Error("Resposta de sincronização excedeu o limite de 8 MB");
@@ -206,12 +214,13 @@ async function syncGenerationOnce(genId) {
           continue;
         }
 
-        const delta = chunk.choices?.[0]?.delta;
-        if (delta?.reasoning_content) {
+        if (chunk.type === "thinking_started") {
           ensureRow();
           ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
-          appendThinkingSegment(activity, delta.reasoning_content);
+          continue;
         }
+
+        const delta = chunk.choices?.[0]?.delta;
         if (delta?.content) {
           if (reply.length + String(delta.content).length > MAX_SYNC_RESPONSE_CHARS) throw new Error("Resposta de sincronização grande demais");
           ensureRow();
@@ -284,6 +293,7 @@ async function syncGenerationOnce(genId) {
       appendMessage("bot", "Não foi possível sincronizar agora. Tente de novo em instantes.");
     }
   } finally {
+    clearTimeout(inactivityTimer);
     if (syncAbortController === controller) syncAbortController = null;
     if (currentAbortController === controller) currentAbortController = null;
     loading = false; hideStopBtn(); currentGenId = null;
@@ -291,12 +301,28 @@ async function syncGenerationOnce(genId) {
   }
 }
 
+const BOREAS_WORK_STATUS_LABELS = [
+  "Pensando...",
+  "Processando...",
+  "Trabalhando...",
+  "Preparando...",
+  "Analisando...",
+  "Gerando...",
+  "Executando...",
+  "Aguarde...",
+];
+
+function boreasRandomWorkStatus() {
+  return BOREAS_WORK_STATUS_LABELS[Math.floor(Math.random() * BOREAS_WORK_STATUS_LABELS.length)];
+}
+
 function startElapsedTicker(getBubbleEl, startTime) {
   const intervalId = setInterval(() => {
     const b = getBubbleEl();
-    if (!b || !b.innerHTML.includes("Em trabalho")) return;
+    const label = b?.querySelector(".work-status-label")?.textContent || "";
+    if (!b || !label) return;
     const elapsed = Math.round((Date.now() - startTime) / 1000);
-    b.innerHTML = `<span class="work-status-label">Em trabalho</span><span class="work-status-elapsed">${elapsed}s</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
+    b.innerHTML = `<span class="work-status-label">${label}</span><span class="work-status-elapsed">${elapsed}s</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
   }, 1000);
   return () => clearInterval(intervalId); // stop() - idempotente
 }

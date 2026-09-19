@@ -83,14 +83,14 @@ async function send() {
 
   if (isFirstMessage && activeChatId) {
     const titleSeed = text || fileSnapshot?.name || (imagesSnapshot.length ? "Imagem enviada" : "");
-    if (titleSeed) generateTitle(activeChatId, titleSeed);
+    if (titleSeed) void generateTitle(activeChatId, titleSeed);
   }
 
   let thinkingTimer = setTimeout(() => {
     const tr = document.getElementById("typing-row");
     if (tr) {
       const b = tr.querySelector(".bubble");
-      if (b) b.innerHTML = `<span class="work-status-label">Em trabalho</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
+      if (b) b.innerHTML = `<span class="work-status-label">${boreasRandomWorkStatus()}</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
     }
   }, 1000);
 
@@ -134,7 +134,7 @@ async function send() {
     if (!res.ok) { throw await boreasHttpError(res); }
 
     const reader = res.body.getReader(); const decoder = new TextDecoder();
-    let reply = "", reasoning = "", buffer = "";
+    let reply = "", buffer = "";
     let msgAttachments = [];
     // Tracks the provisional assistant message object (if any) written by
     // the image_generation checkpoint save below, so the final push at
@@ -337,17 +337,14 @@ async function send() {
             continue;
           }
 
-          const delta = chunk.choices?.[0]?.delta ?? {};
-          const reasoningDelta = delta.reasoning_content ?? "", contentDelta = delta.content ?? "";
-
-          if (reasoningDelta) {
-            if (reasoning.length + String(reasoningDelta).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
-            reasoning += reasoningDelta;
+          if (chunk.type === "thinking_started") {
             ensureMasterRow();
             ensureThinkingSegment(activity, (pill, detail) => { masterCol.appendChild(pill); masterCol.appendChild(detail); });
-            appendThinkingSegment(activity, reasoningDelta);
-            scrollToBottom();
+            continue;
           }
+
+          const delta = chunk.choices?.[0]?.delta ?? {};
+          const contentDelta = delta.content ?? "";
 
           if (contentDelta) {
             if (reply.length + String(contentDelta).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");

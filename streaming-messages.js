@@ -1,7 +1,7 @@
 // Boreas frontend module: message rendering, actions, context menu, editing, and retry.
 // Loaded as a classic script in the exact order declared by index.html.
 
-function appendMessage(role, content, imageB64, msgIndex, attachments, thinking, steps, activity, fileAttachment, thinkingSummary) {
+function appendMessage(role, content, imageB64, msgIndex, attachments, _thinking, steps, activity, fileAttachment, thinkingSummary) {
   const emptyEl = document.getElementById("empty");
   if (emptyEl) emptyEl.remove();
 
@@ -28,59 +28,8 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
   // happened) instead of two separate pills (thinking-pill + tasks-pill
   // "N steps"). Preserves the real chronological order of calls, instead
   // of grouping by tool type.
-  const hasThinking = typeof thinking === "string" && thinking.trim();
+  const hasThinking = !!thinkingSummary || (Array.isArray(activity) && activity.some(item => item?.type === "thinking"));
   const hasSteps = Array.isArray(steps) && steps.length;
-  if (false && col && (hasThinking || hasSteps)) {
-    const pill = document.createElement("button");
-    pill.className = "tasks-pill";
-    pill.innerHTML = `<span class="thinking-segment-icon">${BOREAS_BRAIN_ICON}</span>Processo de pensamento<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-    const detail = document.createElement("div");
-    detail.className = "tasks-detail";
-    pill.addEventListener("click", () => { pill.classList.toggle("expanded"); detail.classList.toggle("visible"); });
-
-    if (hasThinking) {
-      const taskEl = document.createElement("div"); taskEl.className = "task-item task-item-think";
-      const hdr = document.createElement("div"); hdr.className = "task-item-header expandable";
-      const iSpan = document.createElement("span"); iSpan.className = "task-item-icon"; iSpan.textContent = "💭";
-      const lSpan = document.createElement("span"); lSpan.className = "task-item-label"; lSpan.textContent = "Raciocínio";
-      const chev = document.createElement("span"); chev.className = "task-item-chevron";
-      chev.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-      hdr.appendChild(iSpan); hdr.appendChild(lSpan); hdr.appendChild(chev);
-      const body = document.createElement("div"); body.className = "task-item-body";
-      const outEl = document.createElement("pre"); outEl.className = "task-output"; outEl.textContent = thinking;
-      body.appendChild(outEl);
-      taskEl.appendChild(hdr); taskEl.appendChild(body);
-      hdr.addEventListener("click", () => taskEl.classList.toggle("expanded"));
-      detail.appendChild(taskEl);
-    }
-
-    if (hasSteps) {
-      steps.forEach(s => {
-        const meta = TOOL_META_STATIC[s.tool] ?? { icon: "🔧" };
-        const hasOutput = (s.output !== undefined && s.output !== "") && !isBadgeOnlyTool(s.tool);
-        const taskEl = document.createElement("div"); taskEl.className = "task-item";
-        const hdr = document.createElement("div"); hdr.className = "task-item-header" + (hasOutput ? " expandable" : "");
-        const iSpan = document.createElement("span"); iSpan.className = "task-item-icon"; iSpan.innerHTML = meta.icon;
-        const lSpan = document.createElement("span"); lSpan.className = "task-item-label"; lSpan.textContent = taskItemLabel(s.tool, s.value, s.output !== undefined && s.output !== "");
-        hdr.appendChild(iSpan); hdr.appendChild(lSpan);
-        if (hasOutput) {
-          const chev = document.createElement("span"); chev.className = "task-item-chevron";
-          chev.innerHTML = `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
-          hdr.appendChild(chev);
-          const body = document.createElement("div"); body.className = "task-item-body";
-          renderStepBody(body, s.tool, s.value, s.output);
-          taskEl.appendChild(hdr); taskEl.appendChild(body);
-          hdr.addEventListener("click", () => taskEl.classList.toggle("expanded"));
-        } else { taskEl.appendChild(hdr); }
-        // No grouping by tool type; each item goes straight in the order
-        // the tool was called, preserving the real sequence.
-        detail.appendChild(taskEl);
-      });
-    }
-
-    col.appendChild(pill); col.appendChild(detail);
-  }
-
   // Newer persisted format: each reasoning segment and each tool occupies
   // its own place in the conversation. For older chats, rebuilds the same
   // separation from the aggregated thinking and the known steps.
@@ -89,15 +38,14 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
     const sequence = Array.isArray(activity) && activity.length
       ? activity
       : [
-          ...(hasThinking ? [{ type: "thinking", text: thinking }] : []),
+          ...(hasThinking ? [{ type: "thinking" }] : []),
           ...(hasSteps ? steps.map(s => ({ type: "tool", ...s })) : []),
         ];
     const activityState = {};
     sequence.forEach((item, idx) => {
-      if (item?.type === "thinking" && String(item.text ?? "").trim()) {
+      if (item?.type === "thinking") {
         if (!activityState.thinkingSummary) activityState.thinkingSummary = traceSummary;
         ensureThinkingSegment(activityState, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
-        appendThinkingSegment(activityState, String(item.text), activityState.thinkingSummary);
       } else if (item?.type === "tool") {
         ensureToolActivityCard(col, item, activityState, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
         if (item.output !== undefined && item.output !== "") {
@@ -178,7 +126,7 @@ function appendMessage(role, content, imageB64, msgIndex, attachments, thinking,
     if (fileMatch && role === "user") {
       const [, fname, fcontent, remainder] = fileMatch;
       const chip = document.createElement("div"); chip.className = "file-chip";
-      chip.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span class="file-chip-name">📄 ${escHtml(fname)}</span><svg class="file-chip-chevron" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
+      chip.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg><span class="file-chip-name">${escHtml(fname)}</span><svg class="file-chip-chevron" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
       const body = document.createElement("div"); body.className = "file-chip-body";
       body.textContent = fcontent.slice(0, 4000) + (fcontent.length > 4000 ? "\n…(truncado)" : "");
       chip.addEventListener("click", () => { chip.classList.toggle("open"); body.classList.toggle("open"); });

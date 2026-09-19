@@ -189,7 +189,21 @@ function scheduleMarkdownRender(el, text) {
 // Static copy of TOOL_META (the other instances are local to the streaming
 // functions), just to rebuild the step timeline from saved history,
 // outside of any live stream.
-const TOOL_META_STATIC = { WEB_SEARCH: { icon: "🔍" }, WEB_FETCH: { icon: "🌐" }, BASH: { icon: "💻" }, DELETE: { icon: "🗑️" }, STR_REPLACE: { icon: "✏️" }, SEND_FILE: { icon: "📎" }, CREATE_FILE: { icon: "📄" }, MEMORY: { icon: "🧠" }, PREFERENCES: { icon: "⚙️" }, ASK_USER: { icon: "❓" }, CALCULATOR: { icon: "🧮" }, GRAPH: { icon: "📊" }, FORWARD_MESSAGE: { icon: "🚀" }, USE_PLUGIN: { icon: "🧩" }, DEEP_RESEARCH: { icon: "🔬" }, AGENTIC_LOOP: { icon: "🔁" }, IMAGE_SEARCH: { icon: "🔍" }, PRESENT_IMAGE: { icon: "🖼️" }, VIEW_CHATS: { icon: "🗂️" }, CURRENCY: { icon: "💱" } };
+// Compatibility metadata for older persisted tool steps. The active renderer
+// uses Phosphor classes too; keeping this map emoji-free prevents the legacy
+// path from reintroducing a second icon language.
+const TOOL_META_STATIC = {
+  WEB_SEARCH: { icon: "ph-magnifying-glass" }, WEB_FETCH: { icon: "ph-globe" },
+  BASH: { icon: "ph-terminal-window" }, DELETE: { icon: "ph-trash" },
+  STR_REPLACE: { icon: "ph-pencil-line" }, SEND_FILE: { icon: "ph-paperclip" },
+  CREATE_FILE: { icon: "ph-file-plus" }, MEMORY: { icon: "ph-brain" },
+  PREFERENCES: { icon: "ph-gear" }, ASK_USER: { icon: "ph-question" },
+  CALCULATOR: { icon: "ph-function" }, GRAPH: { icon: "ph-chart-line-up" },
+  FORWARD_MESSAGE: { icon: "ph-arrow-up-right" }, USE_PLUGIN: { icon: "ph-puzzle-piece" },
+  DEEP_RESEARCH: { icon: "ph-flask" }, AGENTIC_LOOP: { icon: "ph-arrows-clockwise" },
+  IMAGE_SEARCH: { icon: "ph-magnifying-glass" }, PRESENT_IMAGE: { icon: "ph-image" },
+  VIEW_CHATS: { icon: "ph-chats" }, CURRENCY: { icon: "ph-currency-circle-dollar" }
+};
 
 // Keeps sensitive tools as fixed cards so no internal text leaks into the UI.
 const PLUGIN_LABELS = { web_search: "Busca na Web", deep_thinking: "Pensamento Aprofundado", study: "Modo Estudo" };
@@ -217,7 +231,7 @@ function buildToolResultVisual(tool, output, value) {
     const lines = String(output).split("\n").filter(Boolean);
     if (!lines.length) return null;
     const wrap = document.createElement("div");
-    wrap.style.cssText = "margin-top:4px;padding:16px 18px;border-radius:16px;background:var(--surface);border:1px solid var(--border);max-width:320px";
+    wrap.style.cssText = "margin-top:4px;padding:16px 18px;border-radius:10px;background:var(--surface);border:1px solid var(--border);max-width:320px";
     if (value) {
       const label = document.createElement("div");
       label.style.cssText = "font-size:12px;color:var(--text-dim);margin-bottom:6px;font-family:monospace";
@@ -260,7 +274,7 @@ function buildToolResultVisual(tool, output, value) {
         card.target = "_blank";
         card.rel = "noopener noreferrer";
         card.title = im.description || im.domain || "";
-        card.style.cssText = "position:relative;flex:0 0 auto;width:200px;height:150px;border-radius:14px;overflow:hidden;display:block;background:var(--surface);border:1px solid var(--border)";
+        card.style.cssText = "position:relative;flex:0 0 auto;width:200px;height:150px;border-radius:10px;overflow:hidden;display:block;background:var(--surface);border:1px solid var(--border)";
         const img = document.createElement("img");
         img.src = imageUrl; img.loading = "lazy"; img.alt = im.description || im.domain || "";
         img.style.cssText = "width:100%;height:100%;object-fit:cover;display:block";
@@ -289,7 +303,7 @@ function buildToolResultVisual(tool, output, value) {
       const sym = c => ({ USD: "$", EUR: "€", GBP: "£", JPY: "¥", BRL: "R$" }[c] ?? (c + " "));
       const fmt = (n, c) => sym(c) + Number(n).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       const wrap = document.createElement("div");
-      wrap.style.cssText = "margin-top:4px;padding:16px 18px;border-radius:16px;background:var(--surface);border:1px solid var(--border);max-width:320px";
+      wrap.style.cssText = "margin-top:4px;padding:16px 18px;border-radius:10px;background:var(--surface);border:1px solid var(--border);max-width:320px";
       const label = document.createElement("div");
       label.style.cssText = "font-size:12px;color:var(--text-dim);margin-bottom:6px";
       label.textContent = "Câmbio";
@@ -311,7 +325,29 @@ function buildToolResultVisual(tool, output, value) {
       wrap.style.cssText = "position:relative;width:100%;max-width:480px;height:280px;margin-top:4px";
       const canvas = document.createElement("canvas");
       wrap.appendChild(canvas);
-      if (!window.Chart) return null;
+      if (!window.Chart) {
+        // CDN failures must remain visible as a useful result instead of
+        // silently dropping the graph card.
+        canvas.remove();
+        const fallback = document.createElement("div");
+        fallback.style.cssText = "height:100%;overflow:auto;padding:12px;border:1px solid var(--border);border-radius:12px;background:var(--surface);font-size:12px";
+        const title = document.createElement("div");
+        title.textContent = spec.title || "Gráfico";
+        title.style.cssText = "font-weight:700;margin-bottom:8px";
+        fallback.appendChild(title);
+        const table = document.createElement("table");
+        table.style.cssText = "width:100%;border-collapse:collapse";
+        const labels = Array.isArray(spec.data?.labels) ? spec.data.labels : [];
+        for (const dataset of Array.isArray(spec.data?.datasets) ? spec.data.datasets : []) {
+          const row = document.createElement("tr");
+          const name = document.createElement("th"); name.textContent = dataset.label || "Série"; name.style.textAlign = "left";
+          const values = document.createElement("td");
+          values.textContent = (Array.isArray(dataset.data) ? dataset.data : []).map((value, i) => `${labels[i] ?? i + 1}: ${typeof value === "object" ? JSON.stringify(value) : value}`).join(" · ");
+          values.style.paddingLeft = "8px";
+          row.append(name, values); table.appendChild(row);
+        }
+        fallback.appendChild(table); wrap.appendChild(fallback); return wrap;
+      }
       // Defers chart creation until the container is in the DOM and
       // visible, so Chart.js can measure the right size.
       requestAnimationFrame(() => {

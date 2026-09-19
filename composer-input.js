@@ -27,12 +27,6 @@ modelPill.addEventListener("pointerleave",  () => modelPill.classList.remove("pr
 document.addEventListener("click", () => {
   modelPill.classList.remove("open");
   document.getElementById("effort-section")?.classList.remove("open");
-  document.getElementById("more-models-section")?.classList.remove("open");
-});
-
-document.getElementById("more-models-btn")?.addEventListener("click", e => {
-  e.stopPropagation();
-  document.getElementById("more-models-section")?.classList.toggle("open");
 });
 
 document.querySelectorAll(".model-option").forEach(opt => {
@@ -84,7 +78,7 @@ document.getElementById("effort-list-inner")?.addEventListener("click", e => {
   const cfg = TIER_EFFORTS[currentTier];
   if (!cfg) return;
   const level = btn.dataset.effort;
-  if (!cfg.levels.includes(level)) return;
+  if (level !== "intelligent" && !cfg.levels.includes(level)) return;
   currentEffort = level;
   document.querySelectorAll(".effort-option").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
@@ -96,8 +90,8 @@ document.getElementById("effort-list-inner")?.addEventListener("click", e => {
 
 const speedDescEl = document.getElementById("speed-desc");
 const speedDescriptions = {
-  fastest: "⚡ Responde rapidamente mas consome até 3x mais tokens.",
-  cheapest: "🪙 Economiza seu uso mas é mais lento.",
+  fastest: "Responde rapidamente, mas consome até 3x mais tokens.",
+  cheapest: "Economiza seu uso, mas é mais lento.",
 };
 
 function updateImageAttach() {

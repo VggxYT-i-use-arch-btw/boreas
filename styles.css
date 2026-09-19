@@ -81,13 +81,6 @@ img{user-select:none;-webkit-user-select:none;-webkit-user-drag:none}
 
 .speed-divider,.speed-row,.speed-desc-box{display:none}
 
-.more-models-section{border-top:1px solid var(--border)}
-.more-models-btn{display:flex;align-items:center;justify-content:space-between;gap:8px;cursor:pointer;user-select:none;padding:14px 16px}
-.more-models-btn-label{font-size:13px;font-weight:600;color:var(--text-faint)}
-.more-models-btn svg{opacity:.5;transition:transform .2s;flex-shrink:0}
-.more-models-section.open .more-models-btn svg{transform:rotate(180deg)}
-.more-models-list{max-height:0;overflow:hidden;transition:max-height .2s cubic-bezier(.22,1,.36,1)}
-.more-models-section.open .more-models-list{max-height:280px}
 /* Effort selector: its own small pill next to the model pill, with its
    own floating dropdown - mirrors .model-pill/.model-dropdown's visual
    language rather than being a row nested inside the model dropdown. */

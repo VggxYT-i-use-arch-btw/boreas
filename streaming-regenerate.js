@@ -64,7 +64,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
   const CHEVRON = `<svg class="pill-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>`;
 
   let thinkingTimer = setTimeout(() => {
-    botBubble.innerHTML = `<span class="work-status-label">Em trabalho</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
+    botBubble.innerHTML = `<span class="work-status-label">${boreasRandomWorkStatus()}</span><span style="display:inline-flex;gap:3px;margin-left:6px;vertical-align:middle"><span class="thinking-dot"></span><span class="thinking-dot"></span><span class="thinking-dot"></span></span>`;
   }, 1000);
 
   currentAbortController = new AbortController();
@@ -168,7 +168,7 @@ async function regenerate(botRow, botBubble, actionsEl) {
             continue;
           }
 
-          if (chunk.type === "step") {
+            if (chunk.type === "step") {
             hasUsedTool = true; closeExtraThink(extraThinkState);
 
             clearTimeout(thinkingTimer);
@@ -183,19 +183,16 @@ async function regenerate(botRow, botBubble, actionsEl) {
             }
             stepsCount++;
             scrollToBottom();
-            continue;
-          }
+              continue;
+            }
 
-          const delta = chunk.choices?.[0]?.delta ?? {};
-          const rd = delta.reasoning_content ?? "", cd = delta.content ?? "";
-          if (rd) {
-            if (reasoning.length + String(rd).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
-            reasoning += rd;
-            if (botBubble?.isConnected) botBubble.remove();
-            ensureThinkingSegment(activity, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
-            appendThinkingSegment(activity, rd);
-            scrollToBottom();
-          }
+            if (chunk.type === "thinking_started") {
+              ensureThinkingSegment(activity, (pill, detail) => { col.appendChild(pill); col.appendChild(detail); });
+              continue;
+            }
+
+            const delta = chunk.choices?.[0]?.delta ?? {};
+          const cd = delta.content ?? "";
           if (cd) {
             if (reply.length + String(cd).length > MAX_RESPONSE_CHARS) throw new Error("Resposta SSE grande demais");
             if (!responseBubble) {

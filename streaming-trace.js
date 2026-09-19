@@ -34,7 +34,7 @@ function BOREAS_traceEnsure(state, mountFn) {
   pill.type = "button";
   pill.className = "thinking-trace-toggle";
   pill.setAttribute("aria-expanded", "false");
-  pill.innerHTML = `<span class="thinking-trace-current-dot is-running" aria-hidden="true"></span><span class="thinking-trace-preview"></span><span class="thinking-trace-chevron" aria-hidden="true">&gt;</span>`;
+  pill.innerHTML = `<span class="thinking-trace-current-dot is-running" aria-hidden="true"></span><span class="thinking-trace-preview"></span><span class="thinking-trace-chevron" aria-hidden="true"><i class="ph ph-caret-right"></i></span>`;
   const detail = document.createElement("div");
   detail.className = "thinking-trace-detail";
   const timeline = document.createElement("div");
@@ -86,19 +86,13 @@ function BOREAS_tracePhasesForSegment(summary, segmentIndex) {
   return normalized.segments.find(segment => segment.segmentIndex === segmentIndex)?.phases ?? [];
 }
 
-function BOREAS_traceBuildThinkingItem(phase, raw) {
+function BOREAS_traceBuildThinkingItem(phase) {
   const item = document.createElement("div");
   item.className = "thinking-trace-item trace-thinking";
-  item.innerHTML = `<span class="thinking-trace-item-icon">${BOREAS_traceIcon("thinking")}</span><div class="thinking-trace-item-main"><div class="thinking-trace-item-title"></div><div class="thinking-trace-item-summary"></div><button type="button" class="thinking-trace-raw-toggle">Ver raciocínio bruto</button><pre class="thinking-trace-raw"></pre></div>`;
+  item.innerHTML = `<span class="thinking-trace-item-icon">${BOREAS_traceIcon("thinking")}</span><div class="thinking-trace-item-main"><div class="thinking-trace-item-title"></div><div class="thinking-trace-item-summary"></div></div>`;
   item.querySelector(".thinking-trace-item-title").textContent = String(phase?.title || "Analisando o raciocínio");
   item.querySelector(".thinking-trace-item-summary").textContent = String(phase?.body || "Resumo sendo preparado…");
-  const rawEl = item.querySelector(".thinking-trace-raw");
-  rawEl.textContent = raw || "";
-  item.querySelector(".thinking-trace-raw-toggle").addEventListener("click", event => {
-    event.stopPropagation();
-    item.classList.toggle("raw-visible");
-  });
-  return { item, rawEl, summaryEl: item.querySelector(".thinking-trace-item-summary") };
+  return { item, summaryEl: item.querySelector(".thinking-trace-item-summary") };
 }
 
 function BOREAS_traceCreateThinking(state, summary, segmentIndex = 0) {
@@ -112,7 +106,6 @@ function BOREAS_traceCreateThinking(state, summary, segmentIndex = 0) {
     segmentIndex,
     items: built.map(part => part.item),
     raw: "",
-    rawEls: built.map(part => part.rawEl),
     summaryEls: built.map(part => part.summaryEl),
   };
   trace.items.push(entry);
@@ -133,8 +126,6 @@ function ensureThinkingSegment(state, mountFn) {
 function appendThinkingSegment(state, delta, summary) {
   const entry = ensureThinkingSegment(state, () => {});
   if (summary && typeof summary !== "object" && entry.summaryEls?.length) entry.summaryEls[0].textContent = summary;
-  entry.raw += String(delta ?? "");
-  entry.rawEls?.forEach(rawEl => { rawEl.textContent = entry.raw; });
   // Never expose a raw reasoning excerpt in the collapsed preview.
   const phase = BOREAS_tracePhasesForSegment(state.thinkingSummary, entry.segmentIndex).at(-1);
   BOREAS_traceSetPreview(state, phase?.title || "Pensando…");
@@ -225,16 +216,20 @@ function BOREAS_traceCreateSubagent(state, step) {
   agents.forEach(agent => {
     const agentEl = document.createElement("div");
     agentEl.className = "subagent-trace-agent";
+    const finished = new Set(["done", "completed", "failed", "stopped", "max_rounds"]).has(String(agent.status));
+    if (finished) agentEl.classList.add("is-complete");
+    if (["failed", "stopped", "max_rounds"].includes(String(agent.status))) agentEl.classList.add("is-failed");
     const name = document.createElement("div");
     name.className = "subagent-trace-name";
     name.textContent = String(agent.name || agent.label || "Subagente");
     const output = document.createElement("div");
     output.className = "subagent-trace-output";
-    output.textContent = String(agent.output || (agent.status === "done" ? agent.error || "Sem resposta." : "Executando…"));
+    output.textContent = String(agent.output || (finished ? agent.error || "Sem resposta." : "Executando…"));
     agentEl.append(name, output);
     entry.agentsEl.appendChild(agentEl);
   });
-  BOREAS_traceSetPreview(state, agents.length ? `Executando ${agents.length} subagente${agents.length === 1 ? "" : "s"}` : "Executando subagente");
+  const allFinished = agents.length > 0 && agents.every(agent => new Set(["done", "completed", "failed", "stopped", "max_rounds"]).has(String(agent.status)));
+  BOREAS_traceSetPreview(state, allFinished ? "Subagentes concluídos" : agents.length ? `Executando ${agents.length} subagente${agents.length === 1 ? "" : "s"}` : "Executando subagente");
   return entry;
 }
 
