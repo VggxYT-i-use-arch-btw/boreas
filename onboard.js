@@ -113,6 +113,33 @@
     }
     function closeForm() { formSheet.classList.remove("open"); }
 
+    // Bind the onboarding controls before checking a cached session. If that
+    // session is stale, validation will return to this screen and the buttons
+    // must still be usable.
+    function bindAuthUi() {
+      document.getElementById("ob-login-btn").addEventListener("click", function () { openForm("login"); });
+      document.getElementById("ob-register-btn").addEventListener("click", function () { openForm("register"); });
+      document.getElementById("ob-form-back").addEventListener("click", closeForm);
+      switchBtn.addEventListener("click", function () { setMode(currentMode === "login" ? "register" : "login"); });
+      document.getElementById("ob-checkbox").addEventListener("click", function () {
+        this.classList.toggle("checked");
+        this.setAttribute("aria-checked", this.classList.contains("checked") ? "true" : "false");
+      });
+      onboardEl.addEventListener("click", function (event) {
+        if (event.target === onboardEl) closeForm();
+      });
+      formSheet.addEventListener("click", function (event) { event.stopPropagation(); });
+      submitBtn.addEventListener("click", submitAuth);
+      ["ob-email", "ob-pass", "ob-pass2", "ob-name"].forEach(function (id) {
+        document.getElementById(id).addEventListener("keydown", function (event) {
+          if (event.key === "Enter") submitAuth();
+        });
+      });
+    }
+
+    setMode("login");
+    bindAuthUi();
+
     var wasOnboarded = localStorage.getItem("boreas_onboarded") === "true"
       && localStorage.getItem("boreas_authenticated") === "true"
       && /^[a-f0-9]{32}$/i.test(localStorage.getItem("boreas_session_scope") || "");
@@ -151,20 +178,6 @@
       });
       return;
     }
-
-    setMode("login");
-    document.getElementById("ob-login-btn").addEventListener("click", function () { openForm("login"); });
-    document.getElementById("ob-register-btn").addEventListener("click", function () { openForm("register"); });
-    document.getElementById("ob-form-back").addEventListener("click", closeForm);
-    switchBtn.addEventListener("click", function () { setMode(currentMode === "login" ? "register" : "login"); });
-    document.getElementById("ob-checkbox").addEventListener("click", function () {
-      this.classList.toggle("checked");
-      this.setAttribute("aria-checked", this.classList.contains("checked") ? "true" : "false");
-    });
-    onboardEl.addEventListener("click", function (event) {
-      if (event.target === onboardEl) closeForm();
-    });
-    formSheet.addEventListener("click", function (event) { event.stopPropagation(); });
 
     async function persistAndGo(sessionScope, resolvedName, use) {
       var email = document.getElementById("ob-email").value.trim();
@@ -282,13 +295,6 @@
         submitBtn.textContent = currentMode === "register" ? "Criar conta" : "Fazer login";
       });
     }
-
-    submitBtn.addEventListener("click", submitAuth);
-    ["ob-email", "ob-pass", "ob-pass2", "ob-name"].forEach(function (id) {
-      document.getElementById(id).addEventListener("keydown", function (event) {
-        if (event.key === "Enter") submitAuth();
-      });
-    });
 
     var images = [
       "https://raw.githubusercontent.com/VggxYT-i-use-arch-btw/chatly/main/loginback.png",
