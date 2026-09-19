@@ -736,7 +736,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 #onboard-screen, #onboard-screen .ob-actions, #onboard-screen .ob-open-btn { pointer-events: auto; }
 .ob-logo-img { filter: none; }
 .ob-tagline { max-width: 540px; font-size: clamp(26px, 4vw, 38px); font-weight: 650; }
-.ob-actions { bottom: max(28px, env(safe-area-inset-bottom)); z-index: 4; }
+.ob-actions { bottom: max(28px, env(safe-area-inset-bottom)); z-index: 4; transition: opacity .16s ease-out, visibility .16s ease-out, transform .16s ease-out; }
+#onboard-screen:has(#ob-form-sheet.open) .ob-actions { opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(-50%) translateY(8px); }
 .ob-open-btn, .ob-submit { border-radius: 8px; box-shadow: none; }
 .ob-open-btn { cursor: pointer; }
 .ob-register-btn, .ob-submit { background: var(--accent); border-color: var(--accent); }
