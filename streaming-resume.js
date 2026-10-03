@@ -30,20 +30,6 @@ sheetExpandHint.addEventListener("click", () => {
   thinkingSheet.classList.add("full"); sheetExpandHint.style.display = "none";
 });
 
-function handleThinkingClick(pill, inlineEl) {
-  const text = inlineEl.textContent;
-  if (isMobile) {
-    if (thinkingSheet.classList.contains("open") && sheetBody.textContent === text) {
-      closeSheet(); pill.classList.remove("expanded");
-    } else {
-      openSheet(text); pill.classList.add("expanded");
-    }
-  } else {
-    const isOpen = inlineEl.classList.contains("visible");
-    inlineEl.classList.toggle("visible", !isOpen); pill.classList.toggle("expanded", !isOpen);
-  }
-}
-
 function getGreeting() {
   const h = new Date().getHours();
   if (h >= 6  && h < 12) return "Como posso te ajudar esta manhã?";

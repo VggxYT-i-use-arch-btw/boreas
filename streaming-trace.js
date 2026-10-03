@@ -123,14 +123,6 @@ function ensureThinkingSegment(state, mountFn) {
   return state.trace.current;
 }
 
-function appendThinkingSegment(state, delta, summary) {
-  const entry = ensureThinkingSegment(state, () => {});
-  if (summary && typeof summary !== "object" && entry.summaryEls?.length) entry.summaryEls[0].textContent = summary;
-  // Never expose a raw reasoning excerpt in the collapsed preview.
-  const phase = BOREAS_tracePhasesForSegment(state.thinkingSummary, entry.segmentIndex).at(-1);
-  BOREAS_traceSetPreview(state, phase?.title || "Pensando…");
-}
-
 function finalizeThinkingSegment(state) {
   const trace = state?.trace;
   if (!trace) return;

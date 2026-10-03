@@ -205,15 +205,6 @@ const TOOL_META_STATIC = {
   VIEW_CHATS: { icon: "ph-chats" }, CURRENCY: { icon: "ph-currency-circle-dollar" }
 };
 
-// Keeps sensitive tools as fixed cards so no internal text leaks into the UI.
-const PLUGIN_LABELS = { web_search: "Busca na Web", deep_thinking: "Pensamento Aprofundado", study: "Modo Estudo" };
-function isBadgeOnlyTool(tool) { return tool === "FORWARD_MESSAGE" || tool === "USE_PLUGIN"; }
-function taskItemLabel(tool, value, hasOutput) {
-  if (tool === "FORWARD_MESSAGE") return hasOutput ? `Ativou: Boreas ${value || "?"}` : "Escalando modelo…";
-  if (tool === "USE_PLUGIN") return hasOutput ? `Ativou: ${PLUGIN_LABELS[value] ?? value}` : `Ativando: ${PLUGIN_LABELS[value] ?? value}…`;
-  return value;
-}
-
 // Fills in a task item's (expanded) body. Shared across every rendering
 // point (history, live stream, regeneration); GRAPH is special and draws a
 // real chart via Chart.js from the JSON the backend returns, while every
@@ -383,12 +374,4 @@ function showInlineToolResult(container, stepId, tool, output, before, value) {
   shown.add(stepId);
   if (before && before.parentNode === container) container.insertBefore(visual, before);
   else container.appendChild(visual);
-}
-function renderStepBody(body, tool, value, output) {
-  body.innerHTML = "";
-  const visual = buildToolResultVisual(tool, output, value);
-  if (visual) { body.appendChild(visual); return; }
-  const cmdEl = document.createElement("pre"); cmdEl.className = "task-cmd"; cmdEl.textContent = value;
-  const outEl = document.createElement("pre"); outEl.className = "task-output"; outEl.textContent = output;
-  body.appendChild(cmdEl); body.appendChild(outEl);
 }

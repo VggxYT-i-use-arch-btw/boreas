@@ -200,20 +200,6 @@ async function idbSetImage(key, b64) {
     tx.onerror = e => rej(e.target.error);
   });
 }
-async function idbGetImage(key) {
-  const db = await openImgDb();
-  return new Promise((res, rej) => {
-    const tx = db.transaction("images", "readonly");
-    const store = tx.objectStore("images");
-    const req = store.get(key);
-    req.onsuccess = () => {
-      const value = req.result;
-      const data = typeof value === "string" ? value : value?.data;
-      res(data ?? null);
-    };
-    req.onerror = e => rej(e.target.error);
-  });
-}
 async function idbGetImages(keys) {
   const db = await openImgDb();
   const uniqueKeys = [...new Set(keys)];

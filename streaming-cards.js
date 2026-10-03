@@ -321,11 +321,6 @@ function refreshPersistedThinkingSummary({ chatId, genId, activity, assistantMes
 function closeActivitySegment(state) {
   if (state?.cur) { BOREAS_finalizeSegment(state.cur); state.cur = null; }
 }
-// Legacy: kept only so old call sites that still call this before a "step"
-// arrives don't break. Segment switching is now automatic (handled by
-// ensureToolSegment/ensureThinkingSegment as the type changes).
-function closeThinkingSegment() {}
-
 // Standalone widget (outside any collapsible pill) for invoke-subagents:
 // shows "Answered with N subagents" with one item per agent, each with a
 // shimmer while running and a check when done. Updates live because
