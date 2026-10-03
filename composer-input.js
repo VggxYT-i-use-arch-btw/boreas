@@ -339,47 +339,7 @@ const PLUGINS = [
     enabled: true,
     icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>`,
   },
-  {
-    // Frontend shortcut only - does not gate whether generate_image exists
-    // (see PARTE 18 of the original spec and chat-stream.js's
-    // imageGenerationTokenConfigured gate in buildToolsForCapabilities).
-    // Its enabled flag is set dynamically at load - see
-    // syncImageGenerationPluginAvailability below - to reflect whether the
-    // server actually has image generation configured right now, so the
-    // menu never offers something that would just fail.
-    id: "image_generation", label: "Gerar imagem", desc: "Sugere ao modelo gerar ou editar uma imagem agora",
-    enabled: false, // flips to true once syncImageGenerationPluginAvailability confirms the server has it configured
-    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>`,
-  },
 ];
-
-// generate_image/edit_image only exist server-side when HF_IMG_GEN_TOKEN is
-// configured (see runtime.js's imageGenerationTokenConfigured gate) - the
-// "image_generation" plugin entry starts disabled and only flips on after
-// this confirms the feature is actually live, so the quick-action menu
-// never offers something that would just fail.
-//
-// #17: essa call rodava só uma vez, no load do script - se falhasse por
-// qualquer motivo passageiro (auth ainda não pronta, rede lenta), o catch
-// vazio engolia o erro sem log e o plugin ficava travado em "Em breve" pro
-// resto da sessão inteira, mesmo com a feature funcionando no servidor
-// (bug #2/#3 confirmam que funciona). Agora loga a falha e é re-chamada
-// toda vez que o usuário abre o menu de anexar/plugins, então uma falha
-// pontual não gruda a UI num estado errado até o próximo reload.
-async function syncImageGenerationPluginAvailability() {
-  try {
-    const response = await fetch(`${BACKEND_URL}/status`);
-    if (!response.ok) { console.warn("[image_generation availability] /status HTTP", response.status); return; }
-    const data = await response.json();
-    const entry = PLUGINS.find(p => p.id === "image_generation");
-    if (entry) entry.enabled = Boolean(data?.imageGenerationAvailable);
-    if (mentionPopup?.classList.contains("open")) renderMentionPopup();
-    renderAsheetPluginsList();
-  } catch (err) {
-    console.warn("[image_generation availability] sync falhou:", err?.message || err);
-  }
-}
-syncImageGenerationPluginAvailability();
 
 let activePlugin = null;   // id do plugin ativo pra próxima mensagem enviada
 let mentionStart = -1;     // índice do "@" que abriu o pop-up atual

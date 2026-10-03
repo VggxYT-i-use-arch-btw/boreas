@@ -1,3 +1,3 @@
 // Cloudflared
 // Tunnel
-globalThis.BOREAS_BACKEND_URL = "https://maximum-lions-disciplines-auto.trycloudflare.com";
+globalThis.BOREAS_BACKEND_URL = "https://taxi-writers-preferred-million.trycloudflare.com";

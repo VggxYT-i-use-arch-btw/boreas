@@ -75,10 +75,6 @@ function openAttachSheet() {
   attachSheet.classList.add("open");
   attachSheetBackdrop.classList.add("show");
   syncWebSearchToggle();
-  // #17: re-tenta a disponibilidade do plugin "Gerar imagem" toda vez que o
-  // menu abre, em vez de confiar só na tentativa única do load do script -
-  // ver comentário em syncImageGenerationPluginAvailability (composer-input.js).
-  globalThis.syncImageGenerationPluginAvailability?.();
 }
 function closeAttachSheet() {
   attachSheet.classList.remove("open");

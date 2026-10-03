@@ -378,8 +378,6 @@ const TOOL_ACTIVITY_LABELS = {
   PRESENT_IMAGE: "Mostrando imagens", VIEW_CHATS: "Consultando conversas", CURRENCY: "Consultando câmbio",
   DEEP_RESEARCH: "Pesquisando profundamente", AGENTIC_LOOP: "Executando plano",
   USE_TOOL: "Carregando ferramenta",
-  GENERATE_IMAGE: "Criando sua imagem",
-  EDIT_IMAGE: "Editando imagem",
 };
 function toolActivityLabel(tool, value) {
   const label = TOOL_ACTIVITY_LABELS[tool] ?? "Usando ferramenta";
@@ -408,8 +406,6 @@ const TOOL_ACTIVITY_ICON_PATHS = {
   DEEP_RESEARCH: `<circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path><path d="M11 8v3l2 2"></path>`,
   AGENTIC_LOOP: `<path d="M17 2.1l4 4-4 4"></path><path d="M3 12.7V9.6a4 4 0 0 1 4-4h13.4"></path><path d="M7 21.9l-4-4 4-4"></path><path d="M21 11.3v3.1a4 4 0 0 1-4 4H3.6"></path>`,
   USE_TOOL: `<rect x="3" y="3" width="7" height="7" rx="1"></rect><rect x="14" y="3" width="7" height="7" rx="1"></rect><rect x="3" y="14" width="7" height="7" rx="1"></rect><rect x="14" y="14" width="7" height="7" rx="1"></rect>`,
-  GENERATE_IMAGE: `<rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path>`,
-  EDIT_IMAGE: `<rect x="3" y="3" width="18" height="18" rx="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><path d="M21 15l-5-5L5 21"></path>`,
 };
 function toolActivityIconSvg(tool) {
   const paths = TOOL_ACTIVITY_ICON_PATHS[tool] ?? TOOL_ACTIVITY_ICON_PATHS.PREFERENCES;
@@ -568,113 +564,4 @@ function renderAgenticLoopCard(col, chunk) {
   if (chunk.done) { loading = false; hideStopBtn(); }
 
   scrollToBottom();
-}
-
-const IMG_GEN_ERROR_ICON = `<svg class="img-gen-error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="13"/><line x1="12" y1="16.5" x2="12.01" y2="16.5"/></svg>`;
-const IMG_GEN_EXPIRED_ICON = `<svg class="img-gen-expired-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
-const IMG_GEN_STATUS_LABELS = {
-  improving_prompt: "Melhorando seu prompt",
-  generating: "Criando sua imagem",
-};
-
-// Renders/updates the generation card for one image (keyed by chunk.image_id
-// - a reply can generate more than one image, each gets its own card). See
-// chat-stream.js's "image_generation" SSE event and db.js's generated_images
-// table for the status machine this mirrors: improving_prompt -> generating
-// -> ready | failed (a fifth state, "expired", is handled separately by
-// markImageGenerationExpired below, applied when a chat with older generated
-// images is reopened rather than as a live SSE state).
-function renderImageGenerationCard(col, chunk) {
-  if (!col || !chunk?.image_id) return null;
-  const wrapId = `img-gen-${chunk.image_id}`;
-  let wrap = col.querySelector(`#${wrapId}`);
-  if (!wrap) {
-    wrap = document.createElement("div");
-    wrap.id = wrapId;
-    wrap.className = "img-gen-wrap";
-    wrap.innerHTML = `
-      <div class="img-gen-status">
-        <span class="img-gen-status-text"></span>
-        <span class="img-gen-dots"><span class="img-gen-dot"></span><span class="img-gen-dot"></span><span class="img-gen-dot"></span></span>
-      </div>
-      <div class="img-gen-card" data-ratio="1:1"></div>`;
-    col.appendChild(wrap);
-  }
-
-  const card = wrap.querySelector(".img-gen-card");
-  const statusText = wrap.querySelector(".img-gen-status-text");
-  const dots = wrap.querySelector(".img-gen-dots");
-  const ratio = chunk.aspect_ratio || card.dataset.ratio || "1:1";
-  card.dataset.ratio = ratio;
-
-  if (chunk.status === "improving_prompt" || chunk.status === "generating") {
-    statusText.textContent = IMG_GEN_STATUS_LABELS[chunk.status] ?? "Criando sua imagem";
-    if (dots) dots.style.display = "";
-    scrollToBottom();
-    return wrap;
-  }
-
-  if (chunk.status === "failed") {
-    if (dots) dots.style.display = "none";
-    statusText.textContent = "Falha na geração";
-    card.classList.add("img-gen-error");
-    card.innerHTML = `${IMG_GEN_ERROR_ICON}<span class="img-gen-error-text">Não foi possível gerar essa imagem. Pode pedir para eu tentar de novo.</span>`;
-    scrollToBottom();
-    return wrap;
-  }
-
-  if (chunk.status === "ready") {
-    if (dots) dots.style.display = "none";
-    statusText.textContent = "Imagem pronta";
-    const img = document.createElement("img");
-    img.alt = "Imagem gerada";
-    img.decoding = "async";
-    img.loading = "lazy";
-    // The placeholder (dark card + sheen) stays visible - and the ::after
-    // sheen keeps running - until the real image has actually finished
-    // loading; only then does it crossfade in and the sheen stop, so
-    // "ready" from the server never means an abrupt swap to a half-loaded
-    // or broken image (Parte 34/35 of the spec).
-    img.addEventListener("load", () => {
-      card.classList.add("img-gen-loaded");
-      requestAnimationFrame(() => img.classList.add("img-loaded"));
-    }, { once: true });
-    img.addEventListener("error", async () => {
-      // Distinguishes "expired" (410, expected after 30 days) from a real
-      // load failure - the <img> error event alone doesn't carry the HTTP
-      // status, so a HEAD request is needed to tell them apart.
-      let status = null;
-      try {
-        const headRes = await fetch(img.src, { method: "HEAD", credentials: "include" });
-        status = headRes.status;
-      } catch {}
-      if (status === 410) { markImageGenerationExpired(col, chunk.image_id); return; }
-      card.classList.add("img-gen-error");
-      card.innerHTML = `${IMG_GEN_ERROR_ICON}<span class="img-gen-error-text">A imagem foi gerada, mas não carregou. Tente reabrir a conversa.</span>`;
-    }, { once: true });
-    img.src = `${BACKEND_URL}/generated-image/${encodeURIComponent(chunk.image_id)}`;
-    card.appendChild(img);
-    card.addEventListener("click", () => { if (typeof openLightbox === "function") openLightbox(img.src); }, { once: true });
-    card.style.cursor = "zoom-in";
-    scrollToBottom();
-    return wrap;
-  }
-
-  return wrap;
-}
-
-// Applied when reopening a chat: a generated_image attachment whose expiry
-// has passed (see db.js's generated_images.expires_at / Parte 30 of the
-// spec) never gets its <img> requested at all - straight to the clear
-// "expired" state instead of a broken-image icon or an infinite spinner.
-function markImageGenerationExpired(col, imageId) {
-  const wrap = col?.querySelector(`#img-gen-${imageId}`);
-  if (!wrap) return;
-  const card = wrap.querySelector(".img-gen-card");
-  const statusText = wrap.querySelector(".img-gen-status-text");
-  const dots = wrap.querySelector(".img-gen-dots");
-  if (dots) dots.style.display = "none";
-  if (statusText) statusText.textContent = "Imagem expirada";
-  card.className = "img-gen-card img-gen-expired";
-  card.innerHTML = `${IMG_GEN_EXPIRED_ICON}<span class="img-gen-expired-text">Essa imagem expirou após 30 dias. Você não pode mais baixá-la.</span>`;
 }

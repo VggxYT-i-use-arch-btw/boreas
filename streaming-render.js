@@ -176,16 +176,6 @@ async function syncGenerationOnce(genId) {
         if (chunk.type === "file" && chunk.name) { ensureRow(); masterCol.appendChild(createFileCard(chunk.name, chunk.data, chunk.mime)); msgAttachments.push({ type: "file", name: chunk.name, data: chunk.data, mime: chunk.mime }); scrollToBottom(); continue; }
         if (chunk.type === "deep_research") { ensureRow(); renderDeepResearchCard(masterCol, chunk); if (chunk.done) msgAttachments = [...msgAttachments.filter(a => a.type !== "deep_research"), { ...chunk }]; continue; }
         if (chunk.type === "agentic_loop") { ensureRow(); renderAgenticLoopCard(masterCol, chunk); if (chunk.done) msgAttachments = [...msgAttachments.filter(a => a.type !== "agentic_loop"), { ...chunk }]; continue; }
-        if (chunk.type === "image_generation") {
-          ensureRow(); renderImageGenerationCard(masterCol, chunk);
-          if (chunk.status === "ready" || chunk.status === "failed") {
-            msgAttachments = [
-              ...msgAttachments.filter(a => !(a.type === "generated_image" && a.image_id === chunk.image_id)),
-              { type: "generated_image", image_id: chunk.image_id, status: chunk.status, aspect_ratio: chunk.aspect_ratio, width: chunk.width, height: chunk.height, is_edit: chunk.is_edit },
-            ];
-          }
-          continue;
-        }
         // Um ask_user_prompt já sinalizado como stale (respondido/expirado
         // em outra reconexão ou já resolvido no servidor) vira só um recap
         // somente-leitura - sem isso, cada reconexão (focus/pageshow/online

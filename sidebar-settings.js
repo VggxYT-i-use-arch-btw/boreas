@@ -2,7 +2,7 @@
 // Loaded as a classic script in the exact order declared by index.html.
 
 async function generateTitle(chatId, promptText) {
-  const seed = String(promptText ?? "").trim().slice(0, 1000);
+  const seed = String(promptText ?? "").trim().slice(0, 500);
   if (!seed) return;
   const fallbackTitle = seed
     .replace(/\s+/g, " ")
@@ -16,7 +16,7 @@ async function generateTitle(chatId, promptText) {
       method: "POST",
       headers: BoreasSessionHeaders({ "Content-Type": "application/json" }),
       credentials: "include",
-      body: JSON.stringify({ prompt: seed }),
+      body: JSON.stringify({ prompt: seed, chatId }),
     });
     if (!r.ok) return;
     const { title } = await r.json();

@@ -392,9 +392,6 @@ button:active { transform: scale(.97); }
 .usage-visual-bar span { display: block; min-width: 0; transition: width .3s ease; }
 .usage-visual-prompt { background: linear-gradient(90deg, #6f5ce6, #806cff); }
 .usage-visual-completion { background: linear-gradient(90deg, #42b7d6, #55c6d7); }
-.usage-images-card { margin-top: 10px; }
-.usage-visual-images { background: linear-gradient(90deg, #34c98f, #5fe0ab); }
-.usage-visual-images.limit { background: linear-gradient(90deg, #f87171, #fb9a9a); }
 .usage-visual-legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--text-faint); font-size: 10px; }
 .usage-visual-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .usage-dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
@@ -899,9 +896,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 /* Inline error and loading states use the same border language. */
 .sidebar-error-toast, .ob-error { border-color: rgba(255,141,156,.35); color: #ffb3bd; }
 .sidebar-error-toast { border-radius: 8px; box-shadow: 0 1px 2px rgba(0,0,0,.28); }
-.img-gen-card { border-radius: 10px; }
-.img-gen-card::after { animation: none; }
-.img-gen-status { font-size: 12px; }
 .settings-title, .sidebar-logo-name { font-weight: 600; }
 #msg-input::placeholder { color: var(--text-faint); }
 .sidebar-chat-item.pressing, #hamburger-btn:active, #attach-btn:active, #send-btn:not(:disabled):active { transform: scale(.97); }
@@ -921,8 +915,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, [tabindex]:fo
 .usage-visual-card { background: var(--surface); }
 .usage-visual-prompt { background: var(--accent); }
 .usage-visual-completion { background: var(--accent-strong); }
-.usage-visual-images { background: var(--accent-strong); }
-.usage-visual-images.limit { background: rgba(255,141,156,.8); }
 .usage-dot.prompt { background: var(--accent); }
 .usage-dot.completion { background: var(--accent-strong); }
 #memory-editor-save, .resume-result-btn, #rename-confirm { background: var(--accent-soft); border-color: rgba(82,179,191,.35); color: var(--accent-text); }

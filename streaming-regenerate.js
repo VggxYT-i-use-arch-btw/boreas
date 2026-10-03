@@ -132,17 +132,6 @@ async function regenerate(botRow, botBubble, actionsEl) {
             continue;
           }
 
-          if (chunk.type === "image_generation") {
-            clearTimeout(thinkingTimer);
-            renderImageGenerationCard(col, chunk);
-            if (chunk.status === "ready" || chunk.status === "failed") {
-              msgAttachments = [
-                ...msgAttachments.filter(a => !(a.type === "generated_image" && a.image_id === chunk.image_id)),
-                { type: "generated_image", image_id: chunk.image_id, status: chunk.status, aspect_ratio: chunk.aspect_ratio, width: chunk.width, height: chunk.height, is_edit: chunk.is_edit },
-              ];
-            }
-            continue;
-          }
 
           if (chunk.type === "ask_user_prompt") {
             clearTimeout(thinkingTimer);
